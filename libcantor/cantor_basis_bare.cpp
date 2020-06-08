@@ -35,8 +35,13 @@ cantor_basis_bare<word>::cantor_basis_bare():
   m_AA(new word[c_b_t<word>::n]),
   m_error(0)
 {
-  memset(m_beta_over_gamma, 0, c_b_t<word>::n * sizeof(word));
-  memset(m_gamma_over_beta, 0, c_b_t<word>::n * sizeof(word));
+  for(size_t i = 0; i< c_b_t<word>::n; i++)
+  {
+    m_beta_over_gamma[i] = 0;
+    m_gamma_over_beta[i] = 0;
+  }
+  //memset(m_beta_over_gamma, 0, c_b_t<word>::n * sizeof(word));
+  //memset(m_gamma_over_beta, 0, c_b_t<word>::n * sizeof(word));
   build();
   if(m_error) free_memory();
 }
@@ -191,10 +196,12 @@ void cantor_basis_bare<word>::build()
   }
   // invert matrix of beta over gamma to obtain the expression of {gamma_i} in terms of {beta_j}
   begin_linalg = high_resolution_clock::now();
-  memcpy(m_A, m_beta_over_gamma, n * sizeof(word));
+  for(size_t i = 0; i< c_b_t<word>::n; i++) m_A[i] = m_beta_over_gamma[i];
+  //memcpy(m_A, m_beta_over_gamma, n * sizeof(word));
   int res = invert_matrix(m_A, m_gamma_over_beta, 0);
 
-  memcpy(m_A, m_mult_over_gamma, n * sizeof(word));
+  for(size_t i = 0; i< c_b_t<word>::n; i++) m_A[i] = m_mult_over_gamma[i];
+  //memcpy(m_A, m_mult_over_gamma, n * sizeof(word));
   res |= invert_matrix(m_A, m_gamma_over_mult, 0);
 
   end_linalg = high_resolution_clock::now();
