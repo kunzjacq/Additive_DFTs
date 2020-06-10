@@ -40,46 +40,40 @@ public:
   void fft_direct_exp(const word* p_poly, uint64_t p_poly_degree, const word& x, word* po_result) const;
 
   /**
-   * @brief additive_fft_ref
-   * Computes the same result as fft_direct, using the Von zur Gathen-Gerhard additive FFT
+   * @brief additive_fft_ref_in_place, additive_fft_fast_in_place
+   * Computes in-place the same result as fft_direct, using the Von zur Gathen-Gerhard additive FFT
    * of input polynomial, explained for instance in Todd Mateer PhD thesis
    * (https://tigerprints.clemson.edu/all_dissertations/231/)
    * or at https://cr.yp.to/f2mult.html.
    * The algorithm also uses Cantor bases to simplify Euclidean reductions. These bases ensure that
    * the reductors have all their coefficients equal to 1, except the constant coefficient.
    *
-   * polynomial degree >= field multiplicative order is not supported if m = m_log_bound.
-   * This can be overcome if necessary by pre-reducing the input polynomial by
+   * If polynomial degree >= field multiplicative order, the input polynomial is pre-reduced by
    * X**multiplicative_order - 1.
-   * (with current implementation, such a plynomial would cause a buffer overflow
-   * if m = m_log_bound : the dividend in the first euclidean division would be larger than the
-   * internal buffer in which it is to be stored.)
-   * (if m > m_log_bound, the first euclidean division computed does not store the dividend,
-   * hence the overflow does not occur.)
-   * @param p_poly
-   * @param p_poly_degree
-   * must satisfy p_poly_degree < 2**n - 1 if the field has 2**n elements.
-   * @param po_result
-   * @param blk_offset
+   * The output buffer is assumed to be of size at least 2**m to be able to hold the result.
+   * @param p_poly: input polynomial, and result
+   * @param p_poly_degree: degree of the input polynomial
+   * @param blk_offset: as in fft_direct
    */
-  void additive_fft_ref(word* p_poly, uint64_t p_poly_degree, word *po_result, uint64_t blk_offset = 0) const;
   void additive_fft_ref_in_place(word* p_poly, uint64_t p_poly_degree, uint64_t blk_offset = 0) const;
+  void additive_fft_fast_in_place(word* p_poly, uint64_t p_poly_degree, uint64_t blk_offset = 0) const;
 
   /**
-   * @brief additive_fft_rev_ref
-   * Inverse of additive_fft_ref: rebuilds the polynomial from the output values.
-   * @param p_values
-   * @param po_result
-   * @param blk_index
+   * @brief additive_fft_rev_ref_in_place, additive_fft_rev_fast_in_place
+   * builds a polynomial of degree < 2**m that has the prescribed output values on
+   *
+   * Inverse of additive_fft_{ref,fast}_in_place when the input to these functions is a polynomial
+   * of degree < 2**m.
+   * @param p_values: input values, and output polynomial.
+   * @param blk_index: defines the range corresponding to the input values.
+   *        p_values[i] = P(beta_to_gamma(2**m_log_bound * blk_offset + i)), where 0 <= i < 2**m.
    */
-  void additive_fft_rev_ref( word* p_values, word* po_result, uint64_t blk_index)  const;
   void additive_fft_rev_ref_in_place(word *p_values, uint64_t blk_index) const;
   void additive_fft_rev_fast_in_place(word *p_values, uint64_t blk_index) const;
-  void additive_fft_fast(word* p_poly, uint64_t p_poly_degree, word *po_result, uint64_t blk_offset = 0) const;
-  void additive_fft_fast_in_place(word* p_poly, uint64_t p_poly_degree, uint64_t blk_offset = 0) const;
   void prepare_polynomials();
   void print_fft_polynomials();
-  void evaluate_polynomial_additive_FFT(word *p_poly,
+  void evaluate_polynomial_additive_FFT(
+      word *p_poly,
       word p_num_terms,
       word *po_result
                                         );

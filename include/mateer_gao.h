@@ -292,7 +292,7 @@ int decompose_taylor_test()
   word* copy = test + array_sz;
   word* ref  = test + 2*array_sz;
 
-  cout << "Test Taylor decomposition used in Mateer-Gao FFT" << endl;
+  cout << endl << endl << "Test Taylor decomposition used in Mateer-Gao FFT" << endl;
   int error = 0;
   unsigned int logblocksize = 0;
   for(size_t sz = min_sz; sz < max_sz; sz++)
@@ -340,7 +340,7 @@ int decompose_taylor_test()
   }
 
   if(error == 0) cout << "Taylor decomposition succeeded" << endl;
-  else cout << "Taylor decomposition failure" << endl;
+  else cout << "Taylor decomposition failed" << endl;
 
   cout << "Taylor decomposition benchmark" << endl;
   // process a large instance, for benchmarking purposes

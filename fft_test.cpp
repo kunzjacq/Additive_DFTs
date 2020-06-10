@@ -37,7 +37,7 @@ int main(int UNUSED(argc), char** UNUSED(argv))
     if(additive_fft_error) cout << "additive_fft_test failed" << endl;
     error |= additive_fft_error;
   }
-  if constexpr(false)
+  if constexpr(true)
   {
     int reverse_fft_error = reverse_dft_test(buffers, benchmark);
     if(reverse_fft_error) cout << "reverse_dft_test failed" << endl;
@@ -48,12 +48,12 @@ int main(int UNUSED(argc), char** UNUSED(argv))
     int decompose_taylor_error = decompose_taylor_test<uint32_t>();
     error |= decompose_taylor_error;
   }
-  if constexpr(false)
+  if constexpr(true)
   {
     int mateer_gao_error = mateer_gao_dft_test(buffers, benchmark);
     error |= mateer_gao_error;
   }
-  if constexpr(false)
+  if constexpr(true)
   {
     int inverse_fft_error = dft_inversion_test(buffers);
     if(inverse_fft_error) cout << "dft_inversion_test failed" << endl;
@@ -75,36 +75,32 @@ int main(int UNUSED(argc), char** UNUSED(argv))
 int additive_dft_test(word* p_buffers)
 {
   uint32_t i;
-  //unsigned int log_sz[] = {8, 12, 16, 20};
-  unsigned int log_sz[] = {24};
+  unsigned int log_sz[] = {8, 12, 16, 20};
   double t1 = 0, t2 = 0;
   int local_error, error = 0;
   surand(5);
   cantor_basis<word> c;
-  cout << "comparing direct DFT computation with additive DFT" << endl;
+  cout  << endl << endl << "Comparing direct DFT computation with additive DFT" << endl;
   for(unsigned int j = 0; j < sizeof(log_sz) / 4; j++)
   {
     const unsigned int lsz = log_sz[j];
-    //uint64_t degree = (1uLL << lsz) - 2;
     uint64_t degree = 0xFFFE;
-
     uint64_t buf_lsz = lsz;
     while((1uLL << buf_lsz) < degree + 1) buf_lsz++;
+    uint32_t word_sz = c_b_t<word>::n;
+    cout << endl << "Testing Additive Fourier Transform of polynomial of degree " << degree <<
+            ", on 2**" <<  log_sz[j] << " points, in field of size 2**" << word_sz << endl;
     if(buf_lsz > min(c_b_t<word>::n, log_buf_size))
     {
       cout << "degree or DFT size too large to fit into buffers for this test" << endl;
       continue;
     }
-    int check_logsize = min(lsz, 10u);
 
-    const uint64_t blk_offset = urand() & ((1uLL << (c_b_t<word>::n - lsz)) - 1); // must be < (field size) / (sz)
-    uint32_t word_sz = c_b_t<word>::n;
+    int check_logsize = min(lsz, 10u);
     additive_fft<word> fft(&c, lsz);
     additive_fft<word> fft_check(&c, check_logsize);
-    cout << " Testing Additive Fourier Transform of polynomial of degree " << degree <<
-            ", on 2**" <<  log_sz[j] << " points, in field of size 2**" << word_sz << endl;
+    const uint64_t blk_offset = urand() & ((1uLL << (c_b_t<word>::n - lsz)) - 1); // must be < (field size) / (sz)
     word* refIn, *refOut, *buffer1, *buffer2;
-
     uint64_t buf_sz = 1uLL << buf_lsz;
     refIn   = p_buffers + 0 * buf_sz;
     refOut  = p_buffers + 1 * buf_sz;
@@ -112,7 +108,7 @@ int additive_dft_test(word* p_buffers)
     buffer2 = p_buffers + 3 * buf_sz;
     memset(p_buffers, 0, buf_sz * 4 * sizeof(word));
     for (i = 0; i <= degree; i++) refIn[i] = static_cast<word>(urand());
-    uint32_t logrepeat = (lsz >= 24)? 0: 24 - lsz;
+    uint32_t logrepeat = (lsz >= 20)? 0: 20 - lsz;
     uint32_t repeat = 1u << logrepeat;
     cout << "Evaluating polynomial with direct method on 2**" << check_logsize << " points..." << endl;
     t1 = absolute_time();
@@ -121,14 +117,11 @@ int additive_dft_test(word* p_buffers)
     cout << "time of full DFT:  " << t1 * (1u <<  (lsz - check_logsize)) << " sec." << endl;
     cout << "Doing additive DFT..." << endl;
     t2 = absolute_time();
-#if 0
-    for(i = 0 ; i < repeat; i++) fft.additive_fft_fast(refIn, degree, buffer2, blk_offset);
-#else
-    for(i = 0 ; i < repeat; i++) {
+    for(i = 0 ; i < repeat; i++)
+    {
       memcpy(buffer2, refIn, buf_sz * sizeof(word));
-      fft.additive_fft_ref_in_place(buffer2, degree, blk_offset);
+      fft.additive_fft_fast_in_place(buffer2, degree, blk_offset);
     }
-#endif
     t2 = absolute_time() - t2;
     cout << "time of additive DFT:  " <<  t2 / repeat << " sec." << endl;
     cout << "Additive DFT/direct evaluation speed ratio : " <<
@@ -156,7 +149,7 @@ int reverse_dft_test(word* p_buffers, bool benchmark)
   int local_error, error = 0;
   surand(5);
   cantor_basis<word> c;
-  cout << "comparing direct DFT computation with additive DFT" << endl;
+  cout << endl << endl << "Testing reverse additive DFT" << endl;
   for(unsigned int j = 0; j < sizeof(log_sz) / 4; j++)
   {
     unsigned int lsz = log_sz[j];
@@ -280,19 +273,20 @@ int dft_inversion_test(word* p_buffers)
   unsigned int log_sz = c_b_t<word>::n;
   surand(5);
   cantor_basis<word> c;
-  uint64_t degree = 0xFFFE;
+  int local_error = 0, error = 0;
   const uint64_t sz = 1uLL << log_sz;
+  uint64_t degree = sz - 2;
   uint64_t buf_sz = sz;
   while(buf_sz < degree + 1)
   {
     buf_sz <<= 1;
   }
-  cout << endl << "Testing Inverse relation on Fourier Transform of polynomial of degree " <<
+  cout << endl << endl << "Testing Inverse relation on Fourier Transform of polynomial of degree " <<
           degree << ", in field of size 2**" << log_sz << endl;
-  if(buf_sz + c_b_t<word>::word_logsize >= (1uLL << log_buf_size))
+  if(buf_sz > (1uLL << log_buf_size))
   {
     cout << "degree too large to fit into buffers for this test" << endl;
-    return 1;
+    return 0;
   }
   word* refIn, *buffer1, *buffer2, *buffer3;
   refIn   = p_buffers + 0 * buf_sz;
@@ -302,14 +296,12 @@ int dft_inversion_test(word* p_buffers)
   memset(p_buffers, 0, buf_sz * 4 * sizeof(word));
   for (uint64_t i = 0; i <= degree; i++)
   {
-    //refIn[i] = i <= max_degree ? i & 0x3FF : 0;
     refIn[i] = static_cast<word>(urand()) ;
   }
 
   // choose element according to which the fft will be re-ordered
   // i.e. a primitive element x s.t. after reordering, the output array contains
   // f(1), f(x), f(x**2), ..., f(x**order - 1)
-
   unsigned int idx = log_sz - 1;
   word x;
   while(!is_primitive((x = c.beta_over_gamma(idx)), c)) idx--;
@@ -320,33 +312,51 @@ int dft_inversion_test(word* p_buffers)
   }
 
   additive_fft<word> fft(&c, log_sz);
-  memcpy(buffer1, refIn, sz * sizeof(word));
-  cout << "Doing 1st Fourier Transform..." << endl;
-#if 0
-  fft.fft_direct_exp(buffer1, degree, x, buffer3);
-#else
-  fft.additive_fft_fast(buffer1, degree, buffer2, 0);
-  reorder(&c, buffer2, buffer3, log_sz, x);
-#endif
-  cout << "Doing 2nd Fourier Transform..." << endl;
-#if 0
-  fft.fft_direct_exp(buffer3, sz - 2, x, buffer2);
-#else
-  fft.additive_fft_fast(buffer3, sz - 2, buffer1);
-  //fft.fft_direct(buffer3, sz - 2, buffer1);
-  reorder(&c, buffer1, buffer2, log_sz, x);
-#endif
-  cout << "Swapping output array..." << endl;
-  for(size_t i = 1; i < sz/2; i++) swap(buffer2[i], buffer2[sz - 1 - i]);
-  int error = memcmp(buffer2, refIn, (sz - 1) * sizeof(word));
-  if(error)
+
+  for(int a = 0; a < 2; a++)
   {
-    cout << "double fft and initial polynomial differ: " << endl;
-    compare_results < word > (refIn, buffer2, (sz - 1), 16);
-  }
-  else
-  {
-    cout << "double fft is identity" << endl;
+    for(int b = 0; b < 2; b++)
+    {
+      memcpy(buffer1, refIn, sz * sizeof(word));
+      cout << "Doing 1st Fourier Transform ";
+      if(a)
+      {
+        cout << " With direct method" << endl;
+        fft.fft_direct_exp(buffer1, degree, x, buffer2);
+      }
+      else
+      {
+        cout << " with additive method" << endl;
+        fft.additive_fft_fast_in_place(buffer1, degree, 0);
+        reorder(&c, buffer1, buffer2, log_sz, x);
+      }
+      cout << "Doing 2nd Fourier Transform ";
+      if(b)
+      {
+        cout << " With direct method" << endl;
+        fft.fft_direct_exp(buffer2, sz - 2, x, buffer1);
+        memcpy(buffer2, buffer1, sz * sizeof(word));
+      }
+      else
+      {
+        cout << " with additive method" << endl;
+        fft.additive_fft_fast_in_place(buffer2, sz - 2, 0);
+        memcpy(buffer1, buffer2, sz * sizeof(word));
+        reorder(&c, buffer1, buffer2, log_sz, x);
+      }
+      for(size_t i = 1; i < sz/2; i++) swap(buffer2[i], buffer2[sz - 1 - i]);
+      local_error = memcmp(buffer2, refIn, (sz - 1) * sizeof(word));
+      if(local_error)
+      {
+        cout << "double fft and initial polynomial differ: " << endl;
+        compare_results < word > (refIn, buffer2, (sz - 1), 16);
+      }
+      else
+      {
+        cout << "double fft is identity" << endl;
+      }
+      error |= local_error;
+    }
   }
   return error;
 }
@@ -364,7 +374,7 @@ bool mateer_gao_full(word* p_buffers, cantor_basis<word>& c, bool benchmark)
   // since word_sz >= log_buf_size
 
   cout << dec;
-  cout << "Full Mateer-Gao (FMG) additive DFT test/benchmark" << endl;
+  cout << endl << "Full Mateer-Gao (FMG) additive DFT test/benchmark" << endl;
   if(word_sz > log_buf_size) {
     cout << "Degree too large to fit into buffers for this test" << endl;
     return true;
@@ -394,7 +404,11 @@ bool mateer_gao_full(word* p_buffers, cantor_basis<word>& c, bool benchmark)
   } else {
     cout << "Evaluating polynomial with full regular additive DFT..." << endl;
   }
-  for(i = 0 ; i < repeat; i++) fft.additive_fft_fast(refIn, sz - 2, refOut, 0);
+  for(i = 0 ; i < repeat; i++)
+  {
+    memcpy(refOut, refIn, sz * sizeof(word));
+    fft.additive_fft_fast_in_place(refOut, sz - 2, 0);
+  }
   t1 = (absolute_time() - t1) / repeat;
   if(benchmark) {
     cout << "time for full regular additive DFT per iteration:  " << t1 / repeat << " sec." << endl;
@@ -443,10 +457,10 @@ int mateer_gao_dft_test(word* p_buffers, bool benchmark)
   degree = sz - 2; // for full additive DFT, polynomial degree must be < to field multiplicative order
 
   cout << dec;
-#if 0
 #if 1
-  cout << "Comparing regular additive DFT computation with Mateer-Gao additive DFT" << endl;
-  cout << "Testing full Mateer-Gao Fourier Transform of polynomial of degree " << degree <<
+#if 1
+  cout << endl << endl << "Comparing regular additive DFT computation with Mateer-Gao additive DFT" << endl;
+  cout << endl << "Testing full Mateer-Gao Fourier Transform of polynomial of degree " << degree <<
           " in field of size 2**" << word_sz << endl;
   if(word_sz > log_buf_size)
   {
@@ -466,7 +480,8 @@ int mateer_gao_dft_test(word* p_buffers, bool benchmark)
       refIn[i] = static_cast<word>(urand());
     }
     cout << "Evaluating polynomial with additive DFT..." << endl;
-    fft.additive_fft_fast(refIn, degree, refOut, 0);
+    memcpy(refOut, refIn, sz * sizeof(word));
+    fft.additive_fft_fast_in_place(refOut, degree, 0);
 
     cout << "Evaluating polynomial with Mateer-Gao DFT..." << endl;
     memcpy(buffer1, refIn, sz * sizeof(word));
@@ -479,7 +494,11 @@ int mateer_gao_dft_test(word* p_buffers, bool benchmark)
       repeat = 16;
       cout << "Benchmarking full Mateer-Gao DFT..." << endl;
       t1 = absolute_time();
-      for(i = 0 ; i < repeat; i++) fft.additive_fft_fast(refIn, degree, refOut, 0);
+      for(i = 0 ; i < repeat; i++)
+      {
+        memcpy(refOut, refIn, sz * sizeof(word));
+        fft.additive_fft_fast_in_place(refOut, degree, 0);
+      }
       t1 = (absolute_time() - t1) / repeat;
       cout << "time for regular additive DFT:  " << t1 / repeat << " sec." << endl;
       t2 = absolute_time();
@@ -500,7 +519,7 @@ int mateer_gao_dft_test(word* p_buffers, bool benchmark)
 #endif
 #endif
 
-#if 0
+#if 1
   double truncated_times[sizeof(log_sz) / 4];
   // test truncated mateer-gao fft, and compare it to truncated regular additive fft
   for(unsigned int j = 0; j < sizeof(log_sz) / 4; j++)
@@ -509,7 +528,7 @@ int mateer_gao_dft_test(word* p_buffers, bool benchmark)
     if(lsz > c_b_t<word>::n) continue;
     sz = 1uLL << lsz;
     degree = sz - 1;
-    cout << "Testing truncated Mateer-Gao Fourier Transform of polynomial of degree " <<
+    cout << endl << "Testing truncated Mateer-Gao Fourier Transform of polynomial of degree " <<
             degree << ", on 2**" <<  lsz << " points, in field of size 2**" << word_sz << endl;
     if(lsz > log_buf_size)
     {
@@ -529,7 +548,8 @@ int mateer_gao_dft_test(word* p_buffers, bool benchmark)
       cout << "Polynomial constant term: " << hex << refIn[0] << dec << endl;
       cout << "Evaluating polynomial with truncated regular additive DFT..." << endl;
     }
-    fft.additive_fft_fast(refIn, degree, buffer2, 0);
+    memcpy(buffer2, refIn, sz * sizeof(word));
+    fft.additive_fft_fast_in_place(buffer2, degree, 0);
     if(verbose) cout << "Evaluating polynomial with truncated Mateer-Gao DFT..." << endl;
     memcpy(buffer1, refIn, sz * sizeof(word));
     fft_mateer_truncated<word,s>(&c, buffer1, lsz);
@@ -541,7 +561,11 @@ int mateer_gao_dft_test(word* p_buffers, bool benchmark)
       cout << "Benchmarking truncated Mateer-Gao against truncated regular additive DFT" << endl;
       cout << "Performing " << repeat_partial << " operations" << endl;
       t1 = absolute_time();
-      for(i = 0 ; i < repeat_partial; i++) fft.additive_fft_fast(refIn, degree, buffer2, 0);
+      for(i = 0 ; i < repeat_partial; i++)
+      {
+        memcpy(buffer2, refIn, sz * sizeof(word));
+        fft.additive_fft_fast_in_place(buffer2, degree, 0);
+      }
       t2 = absolute_time();
       t1 = (t2 - t1) / repeat_partial;
       cout << "time of truncated regular additive DFT:  " << t1 << " sec." << endl;
@@ -559,7 +583,7 @@ int mateer_gao_dft_test(word* p_buffers, bool benchmark)
   }
 #endif
 
-#if 0
+#if 1
   // testing that fft_mateer_truncated_reverse \circ fft_mateer_truncated = id
   for(unsigned int j = 0; j < sizeof(log_sz) / 4; j++)
   {
@@ -567,7 +591,7 @@ int mateer_gao_dft_test(word* p_buffers, bool benchmark)
     if(lsz > c_b_t<word>::n) continue;
     sz = 1uLL << lsz;
     degree = sz - 1;
-    cout << "Testing reverse truncated Mateer-Gao Fourier Transform of polynomial of degree " <<
+    cout << endl << "Testing reverse truncated Mateer-Gao Fourier Transform of polynomial of degree " <<
             degree << ", on 2**" <<  lsz << " points, in field of size 2**" << word_sz << endl;
     if(lsz > log_buf_size)
     {
@@ -594,7 +618,7 @@ int mateer_gao_dft_test(word* p_buffers, bool benchmark)
   {
     lsz = log_sz[j];
     sz = 1uLL << lsz;
-    cout << "Testing F2 polynomial product through FFTs. Multiplying 2 polynomials of degree " <<
+    cout << endl << "Testing F2 polynomial product through FFTs. Multiplying 2 polynomials of degree " <<
             sz/2 - 1 << ", in field of size 2**" << word_sz << endl;
     if(lsz > min(log_buf_bitsize, c_b_t<word>::n))
     {
@@ -633,15 +657,15 @@ int mateer_gao_dft_test(word* p_buffers, bool benchmark)
 #endif
   if(benchmark)
   {
-#if 0
+#if 1
     for(unsigned int j = 0; j < sizeof(log_sz) / 4; j++)
     {
       lsz = log_sz[j];
       if(lsz > c_b_t<word>::n) continue;
       sz = 1uLL << lsz;
       degree = sz - 1;
-      cout << "Benchmarking reverse truncated Mateer-Gao Fourier Transform of polynomial of degree " <<
-              degree << ", on 2**" <<  lsz << " points, in field of size 2**" << word_sz << endl;
+      cout << endl << "Benchmarking reverse truncated Mateer-Gao Fourier Transform of polynomial of degree "
+           << degree << ", on 2**" <<  lsz << " points, in field of size 2**" << word_sz << endl;
       if(sz + c_b_t<word>::word_logsize >= (1uLL << log_buf_size))
       {
         cout << "degree too large to fit into buffers for this test" << endl;
@@ -665,8 +689,8 @@ int mateer_gao_dft_test(word* p_buffers, bool benchmark)
       lsz = log_sz[j];
       sz = 1uLL << lsz;
       degree = sz - 1;
-      cout << "Benchmarking F2 polynomial product through FFTs with maximum total degree " << degree <<
-              ", in field of size 2**" << word_sz << endl;
+      cout << endl << "Benchmarking F2 polynomial product through FFTs with maximum total degree "
+           << degree << ", in field of size 2**" << word_sz << endl;
       if(lsz > min(log_buf_bitsize, c_b_t<word>::n))
       {
         if(lsz > log_buf_bitsize) cout << "Resulting degree too large to fit into buffers for this test" << endl;
