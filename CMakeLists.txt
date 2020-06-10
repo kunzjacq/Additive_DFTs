@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.9)
 
-project(cantor_basis)
+project(additive_dfts)
 
 include_directories("${PROJECT_SOURCE_DIR}/include")
 

@@ -285,12 +285,12 @@ int decompose_taylor_test()
   unsigned int logstride = 1;
   size_t max_sz = 1uLL << 10;
   size_t min_sz = 0;
-  size_t large_sz = 1uLL << 20;
+  size_t large_sz = 1uLL << 24;
   size_t array_sz = max(large_sz, max_sz << logstride);
-  word* test = new word[3*array_sz];
+  word* test = new word[3 * array_sz];
+  unique_ptr<word[]> _1(test);
   word* copy = test + array_sz;
   word* ref  = test + 2*array_sz;
-  unique_ptr<word[]> _1(test);
 
   cout << "Test Taylor decomposition used in Mateer-Gao FFT" << endl;
   int error = 0;
@@ -311,29 +311,31 @@ int decompose_taylor_test()
     decompose_taylor(logstride, logblocksize, logtau, sz, copy);
     if(memcmp(test, copy, (sz << logstride) * sizeof(word))) error = 1;
 
-#if 1
-    decompose_taylor_reverse(logstride, logblocksize, logtau, sz, test);
-#else
-    // this algorithm transforms back the output of decompose_taylor or
-    // decompose_taylor_iterative into its input (it is quadratic in sz/tau.)
-    // this way, the obtained input can be compared to the initial value.
-    uint64_t tau = 1uL << logtau;
-    for(size_t i = (sz + tau - 1)/tau; i > 0; i--)
+    if constexpr(true)
     {
-      for(size_t j = i * tau; j < sz; j++)
+      decompose_taylor_reverse(logstride, logblocksize, logtau, sz, test);
+    }
+    else
+    {
+      // this algorithm transforms back the output of decompose_taylor or
+      // decompose_taylor_iterative into its input (it is quadratic in sz/tau.)
+      // this way, the obtained input can be compared to the initial value.
+      uint64_t tau = 1uL << logtau;
+      for(size_t i = (sz + tau - 1)/tau; i > 0; i--)
       {
-        for(size_t s = 0; s < (1uL << logstride); s++)
+        for(size_t j = i * tau; j < sz; j++)
         {
-          size_t i1 = s + ((j - tau + 1) << logstride);
-          size_t i2 = s + (j << logstride);
-          assert(i1 < (sz << logstride));
-          assert(i2 < (sz << logstride));
-          test[i1] ^= test[i2];
+          for(size_t s = 0; s < (1uL << logstride); s++)
+          {
+            size_t i1 = s + ((j - tau + 1) << logstride);
+            size_t i2 = s + (j << logstride);
+            assert(i1 < (sz << logstride));
+            assert(i2 < (sz << logstride));
+            test[i1] ^= test[i2];
+          }
         }
       }
     }
-#endif
-
     if(memcmp(test, ref, (sz << logstride) * sizeof(word))) error = 1;
   }
 

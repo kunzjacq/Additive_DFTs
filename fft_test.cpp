@@ -18,9 +18,10 @@ constexpr unsigned int log_buf_size = 28;
 constexpr unsigned int log_buf_bitsize = log_buf_size + c_b_t<word>::word_logsize;
 
 constexpr bool verbose = false;
+constexpr bool benchmark = true;
 
 int additive_dft_test(word* p_buffers);
-int reverse_dft_test(word* p_buffers);
+int reverse_dft_test(word* p_buffers, bool benchmark);
 int mateer_gao_dft_test(word* p_buffers, bool benchmark);
 int dft_inversion_test(word* p_buffers);
 
@@ -30,29 +31,34 @@ int main(int UNUSED(argc), char** UNUSED(argv))
   word* buffers = new word[4uLL * (1uLL << log_buf_size)];
   int error = 0;
   init_time();
-#if 0
-  int additive_fft_error = additive_dft_test(buffers);
-  if(additive_fft_error) cout << "additive_fft_test failed" << endl;
-  error |= additive_fft_error;
-#endif
-#if 0
-  int reverse_fft_error = reverse_dft_test(buffers);
-  if(reverse_fft_error) cout << "reverse_dft_test failed" << endl;
-  error |= reverse_fft_error;
-#endif
-#if 0
-  int decompose_taylor_error = decompose_taylor_test<uint32_t>();
-  error |= decompose_taylor_error;
-#endif
-#if 1
-  int mateer_gao_error = mateer_gao_dft_test(buffers, true);
-  error |= mateer_gao_error;
-#endif
-#if 0
-  int inverse_fft_error = dft_inversion_test(buffers);
-  if(inverse_fft_error) cout << "dft_inversion_test failed" << endl;
-  error |= inverse_fft_error;
-#endif
+  if constexpr(true)
+  {
+    int additive_fft_error = additive_dft_test(buffers);
+    if(additive_fft_error) cout << "additive_fft_test failed" << endl;
+    error |= additive_fft_error;
+  }
+  if constexpr(false)
+  {
+    int reverse_fft_error = reverse_dft_test(buffers, benchmark);
+    if(reverse_fft_error) cout << "reverse_dft_test failed" << endl;
+    error |= reverse_fft_error;
+  }
+  if constexpr(true)
+  {
+    int decompose_taylor_error = decompose_taylor_test<uint32_t>();
+    error |= decompose_taylor_error;
+  }
+  if constexpr(false)
+  {
+    int mateer_gao_error = mateer_gao_dft_test(buffers, benchmark);
+    error |= mateer_gao_error;
+  }
+  if constexpr(false)
+  {
+    int inverse_fft_error = dft_inversion_test(buffers);
+    if(inverse_fft_error) cout << "dft_inversion_test failed" << endl;
+    error |= inverse_fft_error;
+  }
   delete [] buffers;
   if (!error)
   {
@@ -69,45 +75,44 @@ int main(int UNUSED(argc), char** UNUSED(argv))
 int additive_dft_test(word* p_buffers)
 {
   uint32_t i;
-  unsigned int log_sz[] = {8, 12, 16, 20};
-  double t1 = 0, t2=0;
+  //unsigned int log_sz[] = {8, 12, 16, 20};
+  unsigned int log_sz[] = {24};
+  double t1 = 0, t2 = 0;
   int local_error, error = 0;
   surand(5);
   cantor_basis<word> c;
   cout << "comparing direct DFT computation with additive DFT" << endl;
   for(unsigned int j = 0; j < sizeof(log_sz) / 4; j++)
   {
-    unsigned int lsz = log_sz[j];
-    if(lsz > c_b_t<word>::n) continue;
-    const uint64_t sz = 1uLL << lsz;
+    const unsigned int lsz = log_sz[j];
+    //uint64_t degree = (1uLL << lsz) - 2;
     uint64_t degree = 0xFFFE;
-    int check_logsize = min(lsz, 12u);
 
-    const uint64_t blk_offset = urand() & ((1uLL << (c_b_t<word>::n - lsz)) - 1); // must be < (field size) / (sz)
-    uint64_t buf_sz = sz;
-    while(buf_sz < degree + 1)
+    uint64_t buf_lsz = lsz;
+    while((1uLL << buf_lsz) < degree + 1) buf_lsz++;
+    if(buf_lsz > min(c_b_t<word>::n, log_buf_size))
     {
-      buf_sz <<= 1;
-    }
-    if(buf_sz + c_b_t<word>::word_logsize >= (1uLL << log_buf_size))
-    {
-      cout << "degree too large to fit into buffers for this test" << endl;
+      cout << "degree or DFT size too large to fit into buffers for this test" << endl;
       continue;
     }
+    int check_logsize = min(lsz, 10u);
+
+    const uint64_t blk_offset = urand() & ((1uLL << (c_b_t<word>::n - lsz)) - 1); // must be < (field size) / (sz)
     uint32_t word_sz = c_b_t<word>::n;
-    additive_fft<word> fft(&c, log_sz[j]);
+    additive_fft<word> fft(&c, lsz);
     additive_fft<word> fft_check(&c, check_logsize);
     cout << " Testing Additive Fourier Transform of polynomial of degree " << degree <<
             ", on 2**" <<  log_sz[j] << " points, in field of size 2**" << word_sz << endl;
     word* refIn, *refOut, *buffer1, *buffer2;
 
+    uint64_t buf_sz = 1uLL << buf_lsz;
     refIn   = p_buffers + 0 * buf_sz;
     refOut  = p_buffers + 1 * buf_sz;
     buffer1 = p_buffers + 2 * buf_sz;
     buffer2 = p_buffers + 3 * buf_sz;
     memset(p_buffers, 0, buf_sz * 4 * sizeof(word));
-    for (i = 0; i <= degree; i++) refIn[i] = static_cast<word>(urand()) ;
-    uint32_t logrepeat = (lsz >= 20)? 0: 20 - lsz;
+    for (i = 0; i <= degree; i++) refIn[i] = static_cast<word>(urand());
+    uint32_t logrepeat = (lsz >= 24)? 0: 24 - lsz;
     uint32_t repeat = 1u << logrepeat;
     cout << "Evaluating polynomial with direct method on 2**" << check_logsize << " points..." << endl;
     t1 = absolute_time();
@@ -116,8 +121,14 @@ int additive_dft_test(word* p_buffers)
     cout << "time of full DFT:  " << t1 * (1u <<  (lsz - check_logsize)) << " sec." << endl;
     cout << "Doing additive DFT..." << endl;
     t2 = absolute_time();
-    memcpy(buffer1, refIn, buf_sz * sizeof(word));
-    for(i = 0 ; i < repeat; i++) fft.additive_fft_ref(buffer1, degree, buffer2, blk_offset);
+#if 0
+    for(i = 0 ; i < repeat; i++) fft.additive_fft_fast(refIn, degree, buffer2, blk_offset);
+#else
+    for(i = 0 ; i < repeat; i++) {
+      memcpy(buffer2, refIn, buf_sz * sizeof(word));
+      fft.additive_fft_ref_in_place(buffer2, degree, blk_offset);
+    }
+#endif
     t2 = absolute_time() - t2;
     cout << "time of additive DFT:  " <<  t2 / repeat << " sec." << endl;
     cout << "Additive DFT/direct evaluation speed ratio : " <<
@@ -137,10 +148,11 @@ int additive_dft_test(word* p_buffers)
 }
 
 
-int reverse_dft_test(word* p_buffers)
+int reverse_dft_test(word* p_buffers, bool benchmark)
 {
   uint32_t i;
-  unsigned int log_sz[] = {8, 12, 16};
+  //unsigned int log_sz[] = {8, 12, 16, 24};
+  unsigned int log_sz[] = {24};
   int local_error, error = 0;
   surand(5);
   cantor_basis<word> c;
@@ -155,7 +167,7 @@ int reverse_dft_test(word* p_buffers)
     const uint64_t blk_offset = urand() & ((1uLL << (c_b_t<word>::n - log_sz[j])) - 1); // must be < (field size) / (sz)
     uint32_t word_sz = c_b_t<word>::n;
     additive_fft<word> fft(&c, log_sz[j]);
-    cout << " Testing reverse Fourier Transform of polynomial of degree " << degree <<
+    cout << endl << "Testing reverse Fourier Transform of polynomial of degree " << degree <<
             ", on 2**" <<  log_sz[j] << " points, in field of size 2**" << word_sz << endl;
     word* refIn, *buffer1, *buffer2;
 
@@ -169,40 +181,41 @@ int reverse_dft_test(word* p_buffers)
       refIn[i] = static_cast<word>(urand()) ;
     }
 
-    cout << "Doing additive DFT..." << endl;
-    memcpy(buffer1, refIn, sz * sizeof(word));
-    fft.additive_fft_ref(buffer1, degree, buffer2, blk_offset);
-    cout << "Applying reverse function..." << endl;
-
-    fft.additive_fft_rev_ref(buffer2, buffer1, blk_offset);
-
-    cout << "Comparing with initial polynomial..." << endl;
-    local_error = compare_results < word > (refIn, buffer1, sz);
-    error |= local_error;
-    if(local_error)
+    if constexpr(true)
     {
-      cout << " Inverse DFT: wrong result *" << endl;
+      cout << "Doing additive DFT..." << endl;
+      memcpy(buffer1, refIn, sz * sizeof(word));
+      fft.additive_fft_fast_in_place(buffer1, degree, blk_offset);
+      cout << "Applying reverse function..." << endl;
+      fft.additive_fft_rev_fast_in_place(buffer1, blk_offset);
+      cout << "Comparing with initial polynomial..." << endl;
+      local_error = compare_results < word > (refIn, buffer1, sz);
+      error |= local_error;
+      if(local_error)
+      {
+        cout << "Wrong result" << endl;
+      }
+      else
+      {
+        cout << "Success!" << endl;
+      }
     }
-    else
+
+    if(benchmark)
     {
-      cout << "Success!" << endl;
+      cout << "relative speed measurement" << endl;
+      uint32_t logrepeat = (lsz >= 24)? 0: 24 - lsz;
+      uint32_t repeat = 1u << logrepeat;
+      double t1 = absolute_time();
+      for(unsigned int i = 0; i < repeat; i++) fft.additive_fft_rev_ref_in_place(buffer1, blk_offset);
+      t1 = absolute_time() - t1;
+      double t2 = absolute_time();
+      for(unsigned int i = 0; i < repeat; i++) fft.additive_fft_rev_fast_in_place(buffer1, blk_offset);
+      t2 = absolute_time() - t2;
+      cout << "time of reference implementation " << t1 << endl;
+      cout << "time of fast implementation " << t2 << endl;
+      cout << "rev fast / rev ref speed ratio:" << t1 / t2 << endl;
     }
-
-    cout << "relative speed measurement" << endl;
-
-    unsigned int repeat = 256;
-
-    double t1 = absolute_time();
-    for(unsigned int i = 0; i < repeat; i++) fft.additive_fft_fast(buffer1, degree, buffer2, blk_offset);
-    t1 = absolute_time() - t1;
-
-    double t2 = absolute_time();
-    for(unsigned int i = 0; i < repeat; i++) fft.additive_fft_rev_ref(buffer2, buffer1, blk_offset);
-    t2 = absolute_time() - t2;
-
-    cout << "rev / direct time ratio:" << t2 / t1 << endl;
-
-
   }
   if(error)
   {

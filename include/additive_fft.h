@@ -1,7 +1,12 @@
 #pragma once
 
+#include <cstdint>
+
 #include "cantor.h"
 #include "gf2_extension_polynomials.h"
+
+template<class word>
+void interleave_quarter_buffer(word* buf, word* p_poly, int logsz);
 
 template <class word>
 class additive_fft
@@ -11,7 +16,7 @@ public:
   word* cst_coefficients;
   word* coeffs_to_cancel;
   unsigned int m;
-  unsigned int* packed_logdegrees;
+  uint64_t* packed_degrees;
   unsigned int* num_coefficients;
   cantor_basis<word>* m_c_b;
   additive_fft(cantor_basis<word> *c_b, unsigned int p_log_bound);
@@ -58,6 +63,7 @@ public:
    * @param blk_offset
    */
   void additive_fft_ref(word* p_poly, uint64_t p_poly_degree, word *po_result, uint64_t blk_offset = 0) const;
+  void additive_fft_ref_in_place(word* p_poly, uint64_t p_poly_degree, uint64_t blk_offset = 0) const;
 
   /**
    * @brief additive_fft_rev_ref
@@ -67,13 +73,16 @@ public:
    * @param blk_index
    */
   void additive_fft_rev_ref( word* p_values, word* po_result, uint64_t blk_index)  const;
+  void additive_fft_rev_ref_in_place(word *p_values, uint64_t blk_index) const;
+  void additive_fft_rev_fast_in_place(word *p_values, uint64_t blk_index) const;
   void additive_fft_fast(word* p_poly, uint64_t p_poly_degree, word *po_result, uint64_t blk_offset = 0) const;
+  void additive_fft_fast_in_place(word* p_poly, uint64_t p_poly_degree, uint64_t blk_offset = 0) const;
   void prepare_polynomials();
   void print_fft_polynomials();
   void evaluate_polynomial_additive_FFT(word *p_poly,
       word p_num_terms,
       word *po_result
-      );
+                                        );
 };
 
 #ifdef HAS_UINT2048

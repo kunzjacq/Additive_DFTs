@@ -172,8 +172,8 @@ void euclidean_division_ref(
  * coefficients of polynomial to reduce.
  * @param p_reductee_degree
  * degree of polynomial to reduce.
- * @param p_reductor_logdegrees
- * reductor non-constant monomials log2 of degrees.
+ * @param p_reductor_degrees
+ * reductor non-constant monomials degrees.
  * @param p_reductor_const_term
  * constant term in reductor.
  * @param p_reductor_num_terms
@@ -197,7 +197,7 @@ void euclidean_division(
     cantor_basis<word>* c_b,
     const word* p_reductee,
     uint64_t p_reductee_degree,
-    const unsigned int* p_reductor_logdegrees,
+    const uint64_t* p_reductor_degrees,
     const word& p_reductor_const_term,
     uint64_t p_reductor_num_terms,
     uint64_t p_reductor_degree,
@@ -234,7 +234,7 @@ void euclidean_division(
       // non-constant terms
       for (k = 0; k < p_reductor_num_terms - 1; k++)
       {
-        uint64_t idx = (1uLL << p_reductor_logdegrees[k]) + i_mod_reductor_degree;
+        uint64_t idx = p_reductor_degrees[k] + i_mod_reductor_degree;
         if(idx >= p_reductor_degree) idx -= p_reductor_degree;
         // below at all times,
         // idx = (p_reductor_degrees[k] + i) % reductor_degree
@@ -249,4 +249,38 @@ void euclidean_division(
     i_mod_reductor_degree--;
   }
   for (i = 0; i < p_reductor_degree; i++) po_remainder[i] ^= p_reductee[i];
+}
+
+template <class word>
+void euclidean_division_in_place(
+    cantor_basis<word>* c_b,
+    word* p_reductee,
+    uint64_t p_reductee_degree,
+    const uint64_t* p_reductor_degrees,
+    const word& p_reductor_const_term,
+    uint64_t p_reductor_num_terms,
+    uint64_t p_reductor_degree)
+{
+  uint64_t i, k;
+  assert((1uLL << p_reductor_logdegrees[p_reductor_num_terms - 1]) == p_reductor_degree);
+
+  if (p_reductor_degree > p_reductee_degree) return;
+  for (i = p_reductee_degree; i > p_reductor_degree - 1; i--)
+  {
+    // introduce a new monomial of the reductee
+    const word coeff_to_cancel = p_reductee[i];
+    if (coeff_to_cancel)
+    {
+      // add coeff_to_cancel* X**(i-p_reductor_degree) * reductor to reductee
+      word product = c_b->multiply(p_reductor_const_term, coeff_to_cancel);
+      word* base = p_reductee + i - p_reductor_degree;
+      base ^= product;
+      for (k = 0; k < p_reductor_num_terms - 1; k++)
+      {
+        base[p_reductor_degrees[k]] ^= coeff_to_cancel;
+      }
+    }
+    // dividend terms of degrees 0 ... p_reductee_degree - p_reductor_degree are in
+    // p_reductee[p_reductor_degree...p_reductee_degree]
+  }
 }
