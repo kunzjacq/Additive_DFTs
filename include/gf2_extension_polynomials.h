@@ -205,7 +205,7 @@ void euclidean_division(
     word* po_dividend)
 {
   uint64_t i, k;
-  assert((1uLL << p_reductor_logdegrees[p_reductor_num_terms - 1]) == p_reductor_degree);
+  assert((p_reductor_degrees[p_reductor_num_terms - 1]) == p_reductor_degree);
 
   if (p_reductor_degree > p_reductee_degree)
   {
@@ -262,7 +262,7 @@ void euclidean_division_in_place(
     uint64_t p_reductor_degree)
 {
   uint64_t i, k;
-  assert((1uLL << p_reductor_logdegrees[p_reductor_num_terms - 1]) == p_reductor_degree);
+  assert((p_reductor_degrees[p_reductor_num_terms - 1]) == p_reductor_degree);
 
   if (p_reductor_degree > p_reductee_degree) return;
   for (i = p_reductee_degree; i > p_reductor_degree - 1; i--)

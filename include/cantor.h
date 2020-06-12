@@ -86,8 +86,8 @@ template<class word> class c_b_t
 template<>
 class c_b_t<uint8_t>{
 public:
-  static const unsigned int word_logsize = 3;
-  static const unsigned int n = 8;
+  static constexpr unsigned int word_logsize = 3;
+  static constexpr unsigned int n = 8;
   static constexpr uint8_t u = 1;
   typedef uint8_t log_type;
   typedef uint8_t half_type;
@@ -97,8 +97,8 @@ public:
 template<>
 class c_b_t<uint16_t>{
 public:
-  static const unsigned int word_logsize = 4;
-  static const unsigned int n = 16;
+  static constexpr unsigned int word_logsize = 4;
+  static constexpr unsigned int n = 16;
   static constexpr uint16_t u = 1;
   typedef uint16_t log_type;
   typedef uint8_t half_type;
@@ -108,8 +108,8 @@ public:
 template<>
 class c_b_t<uint32_t>{
 public:
-  static const unsigned int word_logsize = 5;
-  static const unsigned int n = 32;
+  static constexpr unsigned int word_logsize = 5;
+  static constexpr unsigned int n = 32;
   static constexpr uint32_t u = 1;
   typedef uint16_t log_type;
   typedef uint16_t half_type;
@@ -119,8 +119,8 @@ public:
 template<>
 class c_b_t<uint64_t>{
 public:
-  static const unsigned int word_logsize = 6;
-  static const int unsigned n = 64;
+  static constexpr unsigned int word_logsize = 6;
+  static constexpr int unsigned n = 64;
   static constexpr uint64_t u = 1;
   typedef uint16_t log_type;
   typedef uint32_t half_type;
@@ -132,8 +132,8 @@ template<>
 class c_b_t<uint128_t>
 {
 public:
-  static const unsigned int word_logsize = 7;
-  static const int unsigned n = 128;
+  static constexpr unsigned int word_logsize = 7;
+  static constexpr int unsigned n = 128;
   static constexpr uint128_t u = 0x1_cppui128;
   typedef uint16_t log_type;
   typedef uint64_t half_type;
@@ -146,8 +146,8 @@ template<>
 class c_b_t<uint256_t>
 {
 public:
-  static const unsigned int word_logsize = 8;
-  static const int unsigned n = 256;
+  static constexpr unsigned int word_logsize = 8;
+  static constexpr int unsigned n = 256;
   static constexpr uint256_t u = 0x1_cppui256;
   typedef uint16_t log_type;
   typedef uint128_t half_type;
@@ -159,8 +159,8 @@ public:
 template<>
 class c_b_t<uint512_t>{
 public:
-  static const unsigned int word_logsize = 9;
-  static const int unsigned n = 512;
+  static constexpr unsigned int word_logsize = 9;
+  static constexpr int unsigned n = 512;
   static constexpr uint512_t u = 0x1_cppui512;
   typedef uint16_t log_type;
   typedef uint256_t half_type;
@@ -172,8 +172,8 @@ public:
 template<>
 class c_b_t<uint1024_t>{
 public:
-  static const unsigned int word_logsize = 10;
-  static const int unsigned n = 1024;
+  static constexpr unsigned int word_logsize = 10;
+  static constexpr int unsigned n = 1024;
   static constexpr uint1024_t u = 0x1_cppui1024;
   typedef uint16_t log_type;
   typedef uint512_t half_type;
@@ -185,8 +185,8 @@ public:
 template<>
 class c_b_t<uint2048_t>{
 public:
-  static const unsigned int word_logsize = 11;
-  static const int unsigned n = 2048;
+  static constexpr unsigned int word_logsize = 11;
+  static constexpr int unsigned n = 2048;
   static constexpr uint2048_t u = 0x1_cppui2048;
   typedef uint16_t log_type;
   typedef uint1024_t half_type;

@@ -119,14 +119,17 @@ int main()
 
   if constexpr(reduced_test)
   {
-    //reduced test
-    //cout << "Testing f[2**8]" << endl;
-    //full_test<uint8_t>();
+    cout << "Reduced test" << endl;
+    cout << "Testing f[2**8]" << endl;
+    full_test<uint8_t>();
     cout << "Testing f[2**16]" << endl;
     full_test<uint16_t>();
     cout << "Testing f[2**32]" << endl;
     full_test<uint32_t>();
-    //full_test<uint2048_t>();
+#ifdef HAS_UINT2048
+    cout << "Testing f[2**2048]" << endl;
+    full_test<uint2048_t>();
+#endif
   }
   else
   {
@@ -383,8 +386,8 @@ template <class word> word* create_values(function<word()> draw)
 
 template<class word> void full_test()
 {
+  cout << endl << endl << "Full test for words of size " << c_b_t<word>::n << " bits" << endl;
   cantor_basis<word>* c_b = create_basis<word>();
-
   //FIXME: put engine, dist and draw in a templated class used to generate random or pseudorandom word values.
 
   // use a lambda evaluated immediately as an equivalent of a ternary operator

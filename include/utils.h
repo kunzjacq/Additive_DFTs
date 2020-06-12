@@ -7,6 +7,8 @@
 
 #include <iostream>
 #include <iomanip>
+#include <mmintrin.h>
+#include <immintrin.h>
 
 #if defined(__cplusplus)
 #define UNUSED(x)

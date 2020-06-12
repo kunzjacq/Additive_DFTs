@@ -12,9 +12,10 @@ template <class word>
 class additive_fft
 {
 public:
-  word* buf;
+  static constexpr int cst_coeff_divide = min<unsigned int>(20uL, c_b_t<word>::n/2);
   word* cst_coefficients;
-  word* coeffs_to_cancel;
+  word* cst_coefficients_l;
+  word* cst_coefficients_h;
   unsigned int m;
   uint64_t* packed_degrees;
   unsigned int* num_coefficients;
@@ -56,7 +57,7 @@ public:
    * @param blk_offset: as in fft_direct
    */
   void additive_fft_ref_in_place(word* p_poly, uint64_t p_poly_degree, uint64_t blk_offset = 0) const;
-  void additive_fft_fast_in_place(word* p_poly, uint64_t p_poly_degree, uint64_t blk_offset = 0) const;
+  void additive_fft_fast_in_place(word* p_poly, uint64_t p_poly_degree, word* p_buf, uint64_t blk_offset = 0) const;
 
   /**
    * @brief additive_fft_rev_ref_in_place, additive_fft_rev_fast_in_place
@@ -69,14 +70,13 @@ public:
    *        p_values[i] = P(beta_to_gamma(2**m_log_bound * blk_offset + i)), where 0 <= i < 2**m.
    */
   void additive_fft_rev_ref_in_place(word *p_values, uint64_t blk_index) const;
-  void additive_fft_rev_fast_in_place(word *p_values, uint64_t blk_index) const;
+  void additive_fft_rev_fast_in_place(word *p_values, word* p_buf, uint64_t blk_index) const;
   void prepare_polynomials();
   void print_fft_polynomials();
   void evaluate_polynomial_additive_FFT(
       word *p_poly,
       word p_num_terms,
-      word *po_result
-                                        );
+      word *po_result);
 };
 
 #ifdef HAS_UINT2048
