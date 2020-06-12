@@ -12,8 +12,8 @@ template <class word>
 class additive_fft
 {
 public:
-  static constexpr int cst_coeff_divide = min<unsigned int>(20uL, c_b_t<word>::n/2);
-  word* cst_coefficients;
+  static constexpr int max_dft_size = min<unsigned int>(40uL, c_b_t<word>::n);
+  static constexpr int cst_coeff_divide = max_dft_size>>1;
   word* cst_coefficients_l;
   word* cst_coefficients_h;
   unsigned int m;

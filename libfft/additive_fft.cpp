@@ -10,17 +10,8 @@
 
 constexpr bool debug = false;
 
-// in ' fast' variants,
-// replace the use of a buffer of size 2**(m-1) where m is the size of the DFT
-// to be computed by two buffers of size 2**(m/2) which use much less memory
-// this enables to use buffers of size independent of m assuming m<=40
-// and prepares for the removal of parameter m.
-constexpr bool use_split_cst_table = true;
-
-
 template <class word>
 additive_fft<word>::additive_fft(cantor_basis<word> *c_b, unsigned int p_m):
-  cst_coefficients(nullptr),
   cst_coefficients_l(nullptr),
   cst_coefficients_h(nullptr),
   m(min(p_m, c_b_t<word>::n)),
@@ -30,21 +21,29 @@ additive_fft<word>::additive_fft(cantor_basis<word> *c_b, unsigned int p_m):
 {
   // all loop indexes will fit in 64-bit values
   if(m == 0)  m = c_b_t<word>::n;
-  if(m >= 40) cout << "FFT size requested too large!" << endl;
-  const uint64_t sz = 1uLL << static_cast<size_t>(max(1u, m) - 1);
-  if constexpr(use_split_cst_table)
+  if(m >= max_dft_size) cout << "FFT size requested is too large!" << endl;
+
+  // During DFT or reverse DFT computation, values
+  // v_i,j = P_i(u_j), u_j = j * 2**(i+1) ^ offset, offset < 2*(i+1),
+  // are used repeatedly, where the P_i are the polynomials computed by prepare_polynomials().
+  // because of the properties of Cantor bases, in beta representation, P_i(u) = u >> i,
+  // therefore P_i(u_j) = (offset >> i) ^ (j << 1).
+  // and in gamma representation,
+  // P_i(u_j) = beta_to_gamma(offset >> i) ^ beta_to_gamma(j << 1).
+  // we precompute the right term beta_to_gamma(j << 1)
+  // by splitting j into MSBs and LSBs equally.
+
+  cst_coefficients_l = new word[1uLL<<cst_coeff_divide];
+  cst_coefficients_h = new word[1uLL<<cst_coeff_divide];
+  for(uint64_t j = 0; j < 1uLL<<cst_coeff_divide; j++)
   {
-    cst_coefficients_l = new word[1uLL<<cst_coeff_divide];
-    cst_coefficients_h = new word[max<uint64_t>(1uLL, sz>>cst_coeff_divide)];
-    for(uint64_t j = 0; j < 1uLL<<cst_coeff_divide; j++)
-    {
-      const word cst_term_beta_repr = static_cast<word>(j << 1);
-      cst_coefficients_l[j] = m_c_b->beta_to_gamma(cst_term_beta_repr);
-    }
+    const word cst_term_beta_repr = static_cast<word>(j << 1);
+    cst_coefficients_l[j] = m_c_b->beta_to_gamma(cst_term_beta_repr);
   }
-  else
+  for(uint64_t j = 0; j < 1uLL<< cst_coeff_divide; j++)
   {
-    cst_coefficients = new word[sz];
+    const word cst_term_beta_repr = static_cast<word>(j << (1 + cst_coeff_divide));
+    cst_coefficients_h[j] = m_c_b->beta_to_gamma(cst_term_beta_repr);
   }
   prepare_polynomials();
   if(debug) print_fft_polynomials();
@@ -57,8 +56,6 @@ additive_fft<word>::~additive_fft()
   packed_degrees = nullptr;
   delete[] num_coefficients;
   num_coefficients = nullptr;
-  delete[] cst_coefficients;
-  cst_coefficients = nullptr;
   delete[] cst_coefficients_h;
   cst_coefficients_h = nullptr;
   delete[] cst_coefficients_l;
@@ -284,10 +281,9 @@ void additive_fft<word>::additive_fft_fast_in_place(
 {
   const uint64_t blk_size = 1uLL << m;
   unsigned int step, first_step;
-  uint64_t i, j, k;
   if(p_poly_degree == 0)
   {
-    for(j = 1; j < blk_size; j++) p_poly[j] = p_poly[0];
+    for(uint64_t j = 1; j < blk_size; j++) p_poly[j] = p_poly[0];
     return;
   }
   // deal with cases where the polynomial degree exceeds the field size
@@ -302,7 +298,7 @@ void additive_fft<word>::additive_fft_fast_in_place(
   // for first step, reductor_degree = ho <= p_poly_degree in all cases (since p_poly_degree > 0)
   for(step = first_step; step < c_b_t<word>::n; step++)
   {
-    i = c_b_t<word>::n - 1 - step; // reductor index
+    uint64_t i = c_b_t<word>::n - 1 - step; // reductor index
     const uint64_t o  = 1uLL << (c_b_t<word>::n - step);// = 1uLL << (i+1)
     const uint64_t ho = 1uLL << (c_b_t<word>::n - step - 1);
     // log2 of number of blocks of size o covering the interval 0 ... 2**m - 1
@@ -336,9 +332,9 @@ void additive_fft<word>::additive_fft_fast_in_place(
     {
       // create num_blocks interlaced copies of the initial polynomial by copying each coefficient
       // num_block times, starting at the end.
-      for(k = p_poly_degree ; k != -1uLL; k--)
+      for(uint64_t k = p_poly_degree ; k != -1uLL; k--)
       {
-        for(j = 0; j < num_blocks; j++)
+        for(uint64_t j = 0; j < num_blocks; j++)
         {
           p_poly[k * num_blocks + j] = p_poly[k];
         }
@@ -346,33 +342,17 @@ void additive_fft<word>::additive_fft_fast_in_place(
     }
 
     constexpr uint64_t pow_cst_coeff_divide = 1uLL << cst_coeff_divide;
-    if constexpr(use_split_cst_table)
-    {
-      // Compute constant term of P_i, so that P_i(u) = 0, u = j * o + blk_index * blk_size.
-      // because of the properties of Cantor bases, in beta representation, P_i(u) = u >> i.
-      for(j = 0; j < num_blocks; j+=pow_cst_coeff_divide)
-      {
-        const word cst_term_beta_repr = static_cast<word>((j * o + blk_index * blk_size) >> i);
-        cst_coefficients_h[j>>cst_coeff_divide] = m_c_b->beta_to_gamma(cst_term_beta_repr);
-      }
-    }
-    else
-    {
-      for(j = 0; j < num_blocks; j++)
-      {
-        // Compute constant term of P_i, so that P_i(u) = 0, u = j * o + blk_index * blk_size.
-        // because of the properties of Cantor bases, in beta representation, P_i(u) = u >> i.
-        const word cst_term_beta_repr = static_cast<word>((j * o + blk_index * blk_size) >> i);
-        cst_coefficients[j] = m_c_b->beta_to_gamma(cst_term_beta_repr);
-      }
-    }
+    const word cst_term =
+        m_c_b->beta_to_gamma(static_cast<word>((blk_index * blk_size) >> i));
 
     // divide source by sparse polynomial reductor, for num_blocks interleaved polynomials
     // simultaneously.
+    // the reductor is Q_i,j = P_i ^ v_i,j with v_i,j = P_i(u_j),
+    // u_j = j * o + blk_index * blk_size in beta representation.
+    // (Q_i,j is s.t. Q_i,j(u_j) = 0).
     // on input, coefficent ii of polynomial j is in p_poly[j + num_blocks * ii], ii < o.
-    // at the end of euclidean division,
+    // after euclidean division,
     // remainder coefficient ii of polynomial j is in p_poly[j + num_blocks * ii], ii < ho
-    // and (if computed)
     // dividend coefficient ii of polynomial j is in p_poly[j + num_blocks * (ii + ho)], ii < ho.
     uint64_t* reductor_packed_degrees = packed_degrees + c_b_t<word>::n * i;
     for (uint64_t ii = reductee_d; ii > reductor_d - 1; ii--)
@@ -381,52 +361,44 @@ void additive_fft<word>::additive_fft_fast_in_place(
       // position of the first reductee coefficient affected by current addition of reductor
       word* p = p_poly + ((ii - ho) << log_num_blocks);
       word* q = p_poly + (ii << log_num_blocks);
-
-      if constexpr(use_split_cst_table)
+      word cst_l, cst_h;
+      // both cases below are equivalent to
+      // for(j = 0; j < num_blocks; j++)
+      // {
+      //   p[j] ^= m_c_b->multiply(
+      //     m_c_b->beta_to_gamma(static_cast<word>((j * o + blk_index * blk_size) >> i)), q[j]);
+      // }
+      if(pow_cst_coeff_divide >= num_blocks)
       {
-        word cst_l, cst_h;
-        if(pow_cst_coeff_divide >= num_blocks)
+        cst_h = cst_coefficients_h[0]^cst_term;
+        for(uint64_t j = 0; j < num_blocks; j++)
         {
-          cst_h = cst_coefficients_h[0];
-          for(uint64_t jl = 0; jl < num_blocks; jl++)
-          {
-            cst_l = cst_coefficients_l[jl]^cst_h;
-            // the coeffs to cancel of the num_blocks polynomials reduced simultaneously are the q[j]
-            // the corresponding constant terms of the reductors are the cst_coefficients[j]
-            //p[j] ^= m_c_b->multiply(cst_coefficients[j], q[j]);
-            p[jl] ^= m_c_b->multiply(cst_l, q[jl]);
-          }
-        }
-        else
-        {
-          for(uint64_t jh = 0; jh < num_blocks; jh+=pow_cst_coeff_divide)
-          {
-            cst_h = cst_coefficients_h[jh>>cst_coeff_divide];
-            word* ph = p + jh;
-            word* qh = q + jh;
-            for(uint64_t jl = 0; jl < pow_cst_coeff_divide; jl++)
-            {
-              cst_l = cst_coefficients_l[jl]^cst_h;
-              // the coeffs to cancel of the num_blocks polynomials reduced simultaneously are the q[j]
-              // the corresponding constant terms of the reductors are the cst_coefficients[j]
-              //p[j] ^= m_c_b->multiply(cst_coefficients[j], q[j]);
-              ph[jl] ^= m_c_b->multiply(cst_l, qh[jl]);
-            }
-          }
-
+          // the coeffs to cancel of the num_blocks polynomials reduced simultaneously are the q[j]
+          // the corresponding constant terms of the reductors are the cst_coefficients_l[j]^cst_h
+          p[j] ^= m_c_b->multiply(cst_coefficients_l[j]^cst_h, q[j]);
         }
       }
       else
       {
-        for(j = 0; j < num_blocks; j++)
+        // j, the polynomial index, is jh^jl
+        for(uint64_t jh = 0; jh < num_blocks; jh+=pow_cst_coeff_divide)
         {
-          p[j] ^= m_c_b->multiply(cst_coefficients[j], q[j]);
+          cst_h = cst_coefficients_h[jh>>cst_coeff_divide]^cst_term;
+          word* ph = p + jh;
+          word* qh = q + jh;
+          for(uint64_t jl = 0; jl < pow_cst_coeff_divide; jl++)
+          {
+            cst_l = cst_coefficients_l[jl]^cst_h;
+            // the coeffs to cancel of the num_blocks polynomials reduced simultaneously are the qh[j]
+            // the corresponding constant terms of the reductors are held by cst_l
+            ph[jl] ^= m_c_b->multiply(cst_l, qh[jl]);
+          }
         }
       }
       for (unsigned int ik = 0; ik < num_coefficients[i] - 1; ik++)
       {
         word* r = p + (reductor_packed_degrees[ik] << log_num_blocks);
-        for(j = 0; j < num_blocks; j++) r[j] ^= q[j];
+        for(uint64_t j = 0; j < num_blocks; j++) r[j] ^= q[j];
       }
     }
     // end of euclidean division
@@ -435,7 +407,7 @@ void additive_fft<word>::additive_fft_fast_in_place(
     {
       // compute results r and r+q for all interleaved polynomials
       const uint64_t hos  = num_blocks * ho;
-      for(k = 0; k < hos; k++) p_poly[hos + k] ^= p_poly[k]; // q <- r + q
+      for(uint64_t k = 0; k < hos; k++) p_poly[hos + k] ^= p_poly[k]; // q <- r + q
       // to put data into the correct location for next round,
       // each pair of polynomials (r, r+q) created must be interleaved again
       // experimentally the fastest method, see utils.h for variants
@@ -534,12 +506,7 @@ void additive_fft<word>::additive_fft_rev_fast_in_place(
     )  const
 {
   const uint64_t blk_size = 1uLL << m;
-  uint64_t j, k;
-
-  if(debug)
-  {
-    print_series<word>(p_values, 1uLL << m, 1uLL << m);
-  }
+  if(debug) print_series<word>(p_values, 1uLL << m, 1uLL << m);
 
   for(unsigned int i = 0; i < m; i++)
   {
@@ -559,29 +526,9 @@ void additive_fft<word>::additive_fft_rev_fast_in_place(
       fflush(stdout);
     }
 
-
-
     constexpr uint64_t pow_cst_coeff_divide = 1uLL << cst_coeff_divide;
-    if constexpr(use_split_cst_table)
-    {
-      // Compute constant term of P_i, so that P_i(u) = 0, u = j * o + blk_index * blk_size.
-      // because of the properties of Cantor bases, in beta representation, P_i(u) = u >> i.
-      for(j = 0; j < num_blocks; j+=pow_cst_coeff_divide)
-      {
-        const word cst_term_beta_repr = static_cast<word>((j * o + blk_index * blk_size) >> i);
-        cst_coefficients_h[j>>cst_coeff_divide] = m_c_b->beta_to_gamma(cst_term_beta_repr);
-      }
-    }
-    else
-    {
-      for(j = 0; j < num_blocks; j++)
-      {
-        // Compute constant term of P_i, so that P_i(u) = 0, u = j * o + blk_index * blk_size.
-        // because of the properties of Cantor bases, in beta representation, P_i(u) = u >> i.
-        const word cst_term_beta_repr = static_cast<word>((j * o + blk_index * blk_size) >> i);
-        cst_coefficients[j] = m_c_b->beta_to_gamma(cst_term_beta_repr);
-      }
-    }
+    const word cst_term =
+        m_c_b->beta_to_gamma(static_cast<word>((blk_index * blk_size) >> i));
 
     uint64_t* packed_degrees_i = packed_degrees + c_b_t<word>::n * i;
 
@@ -592,63 +539,58 @@ void additive_fft<word>::additive_fft_rev_fast_in_place(
     // here k is the coefficient index inside a polynomial, j is the polynomial index,
     // and ii is the reductor coefficient index.
 
-    if constexpr(use_split_cst_table)
+    // both cases of if(num_blocks >= pow_cst_coeff_divide)... below are equivalent to
+    // for(k = 0; k < ho; k++)
+    // {
+    //   for(uint64_t j = 0; j < num_blocks; j++)
+    //   {
+    //    jk = k * num_blocks + j;
+    //    p_values[jk + hos] ^= p_values[jk];
+    //    p_values[jk] ^= m_c_b->multiply(
+    //       m_c_b->beta_to_gamma(static_cast<word>((j * o + blk_index * blk_size) >> i)),
+    //       p_values[jk+hos]);
+    //   }
+    // }
+
+    word cst_l, cst_h;
+    if(num_blocks >= pow_cst_coeff_divide)
     {
-      // j = 0 ... num_blocks - 1.
-      // To take advantage of the the computation of cst_coefficients[j] as
-      // cst_coefficient_l[jl]^cst_coefficient_h[jh] with j = jl + jh << cst_coeff_divide,
-      // we have to distinguish between cases num_blocks >= pow_cst_coeff_divide
-      // and num_blocks < pow_cst_coeff_divide
-      word cst_l, cst_h;
-      if(num_blocks >= pow_cst_coeff_divide)
+      for(uint64_t kjh = 0; kjh < hos; kjh+=pow_cst_coeff_divide)
       {
-        for(uint64_t kjh = 0; kjh < hos; kjh+=pow_cst_coeff_divide)
+        cst_h = cst_coefficients_h[(kjh&mask)>>cst_coeff_divide]^cst_term;
+        word* ph = p_values + kjh;
+        word* qh = ph + hos;
+        for(uint64_t jl = 0; jl < pow_cst_coeff_divide; jl++)
         {
-          cst_h = cst_coefficients_h[(kjh&mask)>>cst_coeff_divide];
-          word* ph = p_values + kjh;
-          word* qh = ph + hos;
-          for(uint64_t jl = 0; jl < pow_cst_coeff_divide; jl++)
-          {
-            qh[jl] ^= ph[jl];
-            cst_l = cst_coefficients_l[jl]^cst_h;
-            ph[jl] ^= m_c_b->multiply(cst_l, qh[jl]);
-          }
-        }
-      }
-      else
-      {
-        cst_h = cst_coefficients_h[0];
-        for(k = 0; k < ho; k++)
-        {
-          word* ph = p_values + (k << log_num_blocks);
-          word* qh = ph + hos;
-          for(uint64_t jl = 0; jl < num_blocks; jl++)
-          {
-            qh[jl] ^= ph[jl];
-            cst_l = cst_coefficients_l[jl]^cst_h;
-            ph[jl] ^= m_c_b->multiply(cst_l, qh[jl]);
-          }
+          qh[jl] ^= ph[jl];
+          cst_l = cst_coefficients_l[jl]^cst_h;
+          ph[jl] ^= m_c_b->multiply(cst_l, qh[jl]);
         }
       }
     }
     else
     {
-      // in this first fused loop below jk = j + k * num_blocks.
-      // j is equal to jk % num_blocks, i.e. (jk & mask).
-      for(uint64_t jk = 0; jk < hos; jk++)
+      cst_h = cst_coefficients_h[0]^cst_term;
+      for(uint64_t k = 0; k < ho; k++)
       {
-        p_values[jk + hos] ^= p_values[jk];
-        p_values[jk] ^= m_c_b->multiply(cst_coefficients[jk&mask], p_values[jk + hos]);
-
+        word* ph = p_values + (k << log_num_blocks);
+        word* qh = ph + hos;
+        for(uint64_t jl = 0; jl < num_blocks; jl++)
+        {
+          qh[jl] ^= ph[jl];
+          cst_l = cst_coefficients_l[jl]^cst_h;
+          ph[jl] ^= m_c_b->multiply(cst_l, qh[jl]);
+        }
       }
     }
-    for(k = 0; k < ho; k++)
+
+    for(uint64_t k = 0; k < ho; k++)
     {
       for(uint64_t ii = 0; ii < num_coefficients[i] - 1; ii++)
       {
         word* p = p_values + ((k + packed_degrees_i[ii]) << log_num_blocks);
         word* q = p_values + hos + (k << log_num_blocks);
-        for(j = 0; j < num_blocks; j++) p[j] ^= q[j];
+        for(uint64_t j = 0; j < num_blocks; j++) p[j] ^= q[j];
       }
     }
   }
