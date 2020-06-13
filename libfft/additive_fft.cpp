@@ -11,18 +11,13 @@
 constexpr bool debug = false;
 
 template <class word>
-additive_fft<word>::additive_fft(cantor_basis<word> *c_b, unsigned int p_m):
+additive_fft<word>::additive_fft(cantor_basis<word> *c_b):
   cst_coefficients_l(nullptr),
   cst_coefficients_h(nullptr),
-  m(min(p_m, c_b_t<word>::n)),
   packed_degrees(new uint64_t[static_cast<size_t>(c_b_t<word>::n*c_b_t<word>::n)]),
   num_coefficients(new unsigned int[static_cast<size_t>(c_b_t<word>::n)]),
   m_c_b(c_b)
 {
-  // all loop indexes will fit in 64-bit values
-  if(m == 0)  m = c_b_t<word>::n;
-  if(m >= max_dft_size) cout << "FFT size requested is too large!" << endl;
-
   // During DFT or reverse DFT computation, values
   // v_i,j = P_i(u_j), u_j = j * 2**(i+1) ^ offset, offset < 2*(i+1),
   // are used repeatedly, where the P_i are the polynomials computed by prepare_polynomials().
@@ -67,15 +62,22 @@ template <class word>
 void additive_fft<word>::fft_direct(
     const word* p_poly,
     uint64_t p_poly_degree,
+    uint32_t m,
     word* po_result,
-    uint64_t blk_offset) const
+    uint64_t blk_index) const
 {
+  if(m == 0)  m = c_b_t<word>::n;
+  else        m = min(m, c_b_t<word>::n);
+  if(m >= max_dft_size) {
+    cout << "FFT size requested is too large!" << endl;
+    return;
+  }
   const uint64_t imax = 1uLL << m;
   for (uint64_t i = 0; i < imax; i++)
   {
     po_result[i] = 0;
     // word x = static_cast < word > (i + (1uLL << m) * blk_offset);
-    word x = m_c_b->beta_to_gamma(static_cast<word>(i + (1uLL << m) * blk_offset));
+    word x = m_c_b->beta_to_gamma(static_cast<word>(i + (1uLL << m) * blk_index));
     word x_pow_j = 1; // evaluate polynomial at i; start at i**0
     for (uint64_t j = 0; j < p_poly_degree + 1; j++)
     {
@@ -91,9 +93,16 @@ template <class word>
 void additive_fft<word>::fft_direct_exp(
     const word* p_poly,
     uint64_t p_poly_degree,
+    uint32_t m,
     const word& x,
     word* po_result) const
 {
+  if(m == 0)  m = c_b_t<word>::n;
+  else        m = min(m, c_b_t<word>::n);
+  if(m >= max_dft_size) {
+    cout << "FFT size requested is too large!" << endl;
+    return;
+  }
   assert(m == c_b_t<word>::n && m <= 32);
   const uint64_t imax = (1uLL << m) - 1;
   for (uint64_t i = 0; i < imax; i++)
@@ -112,63 +121,20 @@ void additive_fft<word>::fft_direct_exp(
   //po_result[imax] = 0;
 }
 
-/**
- * reduces in-place a polynomial by X**multiplicative order - 1,
- * where multiplicative_order refers to the multiplicative order of the binary field
- * with elements of type word, i.e., multiplicative order = 2**n - 1 if word has n bits.
- */
-template<class word>
-uint64_t fold_polynomial(word* p_poly, uint64_t p_poly_degree)
-{
-  // deal with cases where the polynomial degree exceeds the multiplicative order of elements in
-  // the finite field : fold the polynomial by reducing it by X**multiplicative order - 1.
-  // this can only occur if c_b_t<word>::n <= 64, since the degree is a 64-bit value.
-  // Degrees around or beyond 2**64 are unrealistic anyway.
-
-  // connot define this as constexpr except by explicitly writing it in hex, since logical operators
-  // do not preserve constexpr-ness. This is a limitation of boost large integers.
-  const word mult_order = ~(static_cast<word>(0));  // 2**n-1
-  if constexpr(c_b_t<word>::n == 64)
-  {
-    if(p_poly_degree == mult_order)
-    {
-      p_poly[0]^=p_poly[mult_order];
-      p_poly_degree = mult_order - 1;
-    }
-  }
-  else if constexpr(c_b_t<word>::n < 64)
-  {
-    if(p_poly_degree >= mult_order)
-    {
-      uint64_t k = p_poly_degree / mult_order;
-
-      for(uint64_t j = 0; j + k*mult_order < p_poly_degree + 1; j++)
-      {
-        p_poly[j] ^= p_poly[j+k*mult_order];
-      }
-
-      for(uint64_t i = 1; i < k; i++)
-      {
-        for(uint64_t j = 0; j < mult_order; j++)
-        {
-          // triggers warning: iteration 1073741825 invokes undefined behavior [-Waggressive-loop-optimizations]
-          // probably for typw word = uint32_t
-          p_poly[j] ^= p_poly[j+i*mult_order];
-        }
-      }
-      p_poly_degree = mult_order - 1;
-    }
-  }
-  return p_poly_degree;
-}
-
 template<class word>
 void additive_fft<word>::additive_fft_ref_in_place(
     word* p_poly,
     uint64_t p_poly_degree,
+    uint32_t m,
     uint64_t blk_index
     )  const
 {
+  if(m == 0)  m = c_b_t<word>::n;
+  else        m = min(m, c_b_t<word>::n);
+  if(m >= max_dft_size) {
+    cout << "FFT size requested is too large!" << endl;
+    return;
+  }
   const uint64_t blk_size = 1uLL << m;
   unsigned int step, first_step;
   uint64_t j, k;
@@ -275,10 +241,17 @@ template<class word>
 void additive_fft<word>::additive_fft_fast_in_place(
     word* p_poly,
     uint64_t p_poly_degree,
+    uint32_t m,
     word* p_buf, // buffer for interleaving
     uint64_t blk_index
     )  const
 {
+  if(m == 0)  m = c_b_t<word>::n;
+  else        m = min(m, c_b_t<word>::n);
+  if(m >= max_dft_size) {
+    cout << "FFT size requested is too large!" << endl;
+    return;
+  }
   const uint64_t blk_size = 1uLL << m;
   unsigned int step, first_step;
   if(p_poly_degree == 0)
@@ -432,9 +405,16 @@ void additive_fft<word>::additive_fft_fast_in_place(
 template<class word>
 void additive_fft<word>::additive_fft_rev_ref_in_place(
     word* p_values,
+    uint32_t m,
     uint64_t blk_index
     )  const
 {
+  if(m == 0)  m = c_b_t<word>::n;
+  else        m = min(m, c_b_t<word>::n);
+  if(m >= max_dft_size) {
+    cout << "FFT size requested is too large!" << endl;
+    return;
+  }
   const uint64_t blk_size = 1uLL << m;
   unsigned int step, first_step, last_step;
   uint64_t j, k;
@@ -501,10 +481,17 @@ void additive_fft<word>::additive_fft_rev_ref_in_place(
 template<class word>
 void additive_fft<word>::additive_fft_rev_fast_in_place(
     word* p_values,
+    uint32_t m,
     word* p_buf, // buffer for interleaving
     uint64_t blk_index
     )  const
 {
+  if(m == 0)  m = c_b_t<word>::n;
+  else        m = min(m, c_b_t<word>::n);
+  if(m >= max_dft_size) {
+    cout << "FFT size requested is too large!" << endl;
+    return;
+  }
   const uint64_t blk_size = 1uLL << m;
   if(debug) print_series<word>(p_values, 1uLL << m, 1uLL << m);
 

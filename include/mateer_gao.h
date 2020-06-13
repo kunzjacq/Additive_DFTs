@@ -847,11 +847,12 @@ void fft_aux_fast_truncated_reverse(
   }
 }
 
-// performs a fft of size 2**(2**s)
+// performs a dft of size 2**(2**s) = u
 // s = 3 : 2**8
 // s = 4 : 2**16
 // s = 5 : 2**32
 // s = 6 which should be 2**64 is not processed correctly (uint64_t eta = 1uL<<(1<<s) overflows)
+// input polynomial should have at most u coefficients, i.e. have degree at most u-1
 template <class word>
 void fft_mateer(cantor_basis<word>* c_b, word* poly, unsigned int s)
 {
@@ -863,6 +864,12 @@ void fft_mateer(cantor_basis<word>* c_b, word* poly, unsigned int s)
 #endif
 }
 
+// computes a truncated dft of the first u=2**logsize values
+// input polynomial should have at most u coefficients, i.e. have degree at most u-1
+// FIXME the arrays needs to be 0 after index u: k non-zero term after index u cause
+// the first k terms of the results to be wrong (the non-zero terms are XORed to the result)
+// this is not normal, as it means that the code accesses these indexes
+// this happens with fft_aux_ref_truncated and fft_aux_fast_truncated
 template <class word, int s>
 void fft_mateer_truncated(cantor_basis<word>* c_b, word* poly, unsigned int logsize)
 {
