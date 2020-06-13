@@ -76,8 +76,7 @@ int main(int UNUSED(argc), char** UNUSED(argv))
 int additive_dft_test(word* p_buffers)
 {
   uint32_t i;
-  //unsigned int log_sz[] = {8, 12, 16, 20};
-  unsigned int log_sz[] = {20, 24};
+  unsigned int log_sz[] = {8, 12, 16, 20};
   double t1 = 0, t2 = 0;
   int local_error, error = 0;
   surand(5);
@@ -145,8 +144,7 @@ int additive_dft_test(word* p_buffers)
 int reverse_dft_test(word* p_buffers, bool benchmark)
 {
   uint32_t i;
-  //unsigned int log_sz[] = {8, 12, 16, 24};
-  unsigned int log_sz[] = {24};
+  unsigned int log_sz[] = {8, 12, 16, 24};
   int local_error, error = 0;
   surand(5);
   cantor_basis<word> c;
@@ -454,6 +452,7 @@ int mateer_gao_dft_test(word* p_buffers, bool benchmark)
   // if word is uint64_t, sz will be 0, but in this case the test will not be run
   // since word_sz >= log_buf_size
   degree = sz - 1;
+  additive_fft<word> fft(&c);
 
   cout << dec;
 #if 1
@@ -468,7 +467,6 @@ int mateer_gao_dft_test(word* p_buffers, bool benchmark)
   else
   {
     // testing full mateer-gao fft, and compare it to full regular additive dft
-    additive_fft<word> fft(&c);
     refIn   = p_buffers + 0 * sz;
     refOut  = p_buffers + 1 * sz;
     buffer1 = p_buffers + 2 * sz;
@@ -525,8 +523,11 @@ int mateer_gao_dft_test(word* p_buffers, bool benchmark)
   {
     lsz = log_sz[j];
     if(lsz > c_b_t<word>::n) continue;
-    sz = 1uLL << lsz;
-    degree = sz - 1; // truncated mateer-gao of size sz needs a polynomial with at most sz coefficients
+    degree = 1uLL<< min(20u, c_b_t<word>::n);
+
+    unsigned int buf_lsz = lsz;
+    while ((1uLL << buf_lsz) <= degree) buf_lsz++;
+    sz = 1uLL << buf_lsz;
     cout << endl << "Testing truncated Mateer-Gao Fourier Transform of polynomial of degree " <<
             degree << ", on 2**" <<  lsz << " points, in field of size 2**" << word_sz << endl;
     if(lsz > log_buf_size)
@@ -535,7 +536,6 @@ int mateer_gao_dft_test(word* p_buffers, bool benchmark)
       continue;
     }
 
-    additive_fft<word> fft(&c);
     refIn   = p_buffers + 0 * sz;
     refOut  = p_buffers + 1 * sz;
     buffer1 = p_buffers + 2 * sz;
@@ -551,12 +551,13 @@ int mateer_gao_dft_test(word* p_buffers, bool benchmark)
     fft.additive_fft_fast_in_place(buffer2, degree, lsz, buffer1, 0);
     if(verbose) cout << "Evaluating polynomial with truncated Mateer-Gao DFT..." << endl;
     memcpy(buffer1, refIn, (degree+1) * sizeof(word));
-    fft_mateer_truncated<word,s>(&c, buffer1, lsz);
+    //fft_mateer_truncated<word,s>(&c, buffer1, lsz);
+    fft.vzgg_mateer_gao_combination(buffer1, degree, lsz);
     local_error = compare_results<word>(buffer1, buffer2, sz, 8, verbose);
     error |= local_error;
     if(benchmark)
     {
-      uint64_t repeat_partial = max(1uLL, (1uLL << 24) >> lsz);
+      uint64_t repeat_partial = max(1uLL, (1uLL << 24) >> buf_lsz);
       cout << "Benchmarking truncated Mateer-Gao against truncated regular additive DFT" << endl;
       cout << "Performing " << repeat_partial << " operations" << endl;
       t1 = absolute_time();
@@ -571,7 +572,8 @@ int mateer_gao_dft_test(word* p_buffers, bool benchmark)
       for(i = 0 ; i < repeat_partial; i++)
       {
         memcpy(buffer1, refIn, sz * sizeof(word));
-        fft_mateer_truncated<word,s>(&c, buffer1, lsz);
+        //fft_mateer_truncated<word,s>(&c, buffer1, lsz);
+        fft.vzgg_mateer_gao_combination(buffer1, degree, lsz);
       }
       t2 = (absolute_time() - t2) / repeat_partial;
       truncated_times[j] = t2; // for later comparison with reverse truncated Mateer-Gao
@@ -687,7 +689,7 @@ int mateer_gao_dft_test(word* p_buffers, bool benchmark)
     {
       lsz = log_sz[j];
       sz = 1uLL << lsz;
-      degree = sz - 1;
+      degree = sz - 1; // degree of the product. Each polynomial will be of degree sz/2-1.
       cout << endl << "Benchmarking F2 polynomial product through FFTs with maximum total degree "
            << degree << ", in field of size 2**" << word_sz << endl;
       if(lsz > min(log_buf_bitsize, c_b_t<word>::n))

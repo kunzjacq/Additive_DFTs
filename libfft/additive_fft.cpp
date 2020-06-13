@@ -2,7 +2,7 @@
 #include <cstring>
 #include <memory>
 #include <algorithm>
-
+#include <mateer_gao.h>
 
 #include "additive_fft.h"
 #include "utils.h"
@@ -151,10 +151,13 @@ void additive_fft<word>::additive_fft_ref_in_place(
   }
   for(uint64_t i = p_poly_degree + 1; i < blk_size; i++) p_poly[i] = 0;
 
-  // we can skip euclidean divisions of size larger than 2**m, but don't have to
-  //first_step =  0;
+  // skip euclidean divisions whose result degree is larger than the target interval
+  // the result of euclidean division(s) done at step 'step' has 2**(n-1-step) coefficients;
+  // we want this to be at most 2**m for first step, hence first_step = max(0, n-m-1), but we
+  // have to be careful with unsigned values.
   first_step =  max(1u, c_b_t<word>::n - m) - 1;
-  // we also still skip the ones that would do nothing because reductor degree > target poly degree
+  // also skip the ones that would do nothing because reductor degree > target poly degree
+  // instead, the polynomial will be copied several times to produce the result
   while((1uLL << (c_b_t<word>::n - first_step - 1)) > p_poly_degree) first_step++;
   // for first step, reductor_degree = ho <= p_poly_degree in all cases (since p_poly_degree > 0)
 
@@ -583,6 +586,62 @@ void additive_fft<word>::additive_fft_rev_fast_in_place(
   }
 }
 
+// Von zur Gathen - Gerhard -- Mateer-Gao Combination.
+// if p_poly_degree > 2**m,
+// do the same first euclidean division as additive_fft_ref_in_place, then use mateer_gao
+// otherwise, simply apply mateer_gao directly
+// [with a mateer-gao algorithm able to handle blk_offset !=0, we could do several smaller
+// mater_gao transforms in this second case.]
+// this is useful for polynomials whose degree is much larger than 2**m.
+template<class word>
+void additive_fft<word>::vzgg_mateer_gao_combination(
+    word* p_poly,
+    uint64_t p_poly_degree,
+    uint32_t m
+    )  const
+{
+  if(m == 0)  m = c_b_t<word>::n;
+  else        m = min(m, c_b_t<word>::n);
+  if(m >= max_dft_size) {
+    cout << "FFT size requested is too large!" << endl;
+    return;
+  }
+  const uint64_t blk_size = 1uLL << m;
+  if(p_poly_degree == 0)
+  {
+    for(uint64_t k = 1; k < blk_size; k++) p_poly[k] = p_poly[0];
+    return;
+  }
+
+  // deal with cases where the polynomial degree exceeds the field size
+  if constexpr(c_b_t<word>::n <= 64)
+  {
+    p_poly_degree = fold_polynomial<word>(p_poly, p_poly_degree);
+  }
+  for(uint64_t i = p_poly_degree + 1; i < blk_size; i++) p_poly[i] = 0;
+
+  if(blk_size <= p_poly_degree)
+  {
+    // here m < n, since otherwise blk_size = 2**n > p_poly_degree thanks to fold_polynomial
+    // do euclidean division with reductor of degree 2**m
+    const uint64_t ho = 1uLL << m;
+    //reductor = P_m
+    const uint64_t reductee_d = p_poly_degree;
+    const uint64_t* p_reductor_degrees = packed_degrees + c_b_t<word>::n * m;
+    const int nc = num_coefficients[m] - 1;
+    // do euclidean division in-line (in this special case the reductor constant term is zero)
+    for (uint64_t ii = reductee_d; ii > ho - 1; ii--)
+    {
+      // introduce a new monomial of the reductee that must be cancelled
+      // this is also the resulting coefficient in dividend since reductor is monic
+      const word c = p_poly[ii];
+      // add (c * X**(i - reductor_degree) * reductor) to reductee
+      word* base = p_poly + ii - ho;
+      for (int ik = 0; ik < nc; ik++) base[p_reductor_degrees[ik]] ^= c;
+    }
+  }
+  fft_mateer_truncated<word, c_b_t<word>::word_logsize>(m_c_b, p_poly, m);
+}
 
 template <class word>
 void additive_fft<word>::prepare_polynomials()

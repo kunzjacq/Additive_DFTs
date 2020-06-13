@@ -118,6 +118,8 @@ public:
       word* p_buf,
       uint64_t blk_index = 0) const;
 
+  void vzgg_mateer_gao_combination(word *p_poly, uint64_t p_poly_degree, uint32_t m) const;
+
   void prepare_polynomials();
   void print_fft_polynomials();
   void evaluate_polynomial_additive_FFT(

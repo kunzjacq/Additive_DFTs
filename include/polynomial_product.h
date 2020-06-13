@@ -1,6 +1,6 @@
 #pragma once
 
-#include "mateer_gao.h"
+#include "additive_fft.h"
 
 /**
  * @brief binary_polynomial_multiply
@@ -126,8 +126,8 @@ void binary_polynomial_multiply(
     size_t d1, size_t d2, unsigned int logsize)
 {
   constexpr unsigned int s = c_b_t<word>::word_logsize;
-  // max number of words to store result;
-  // = (d1 + d2 + 1 + bits_per_word - 1) / bits_per_word  size_t bound = (d1 + d2) / bits_per_word + 1;
+  // max number of words to store result:
+  // = (d1 + d2 + 1 + bits_per_word - 1) / bits_per_word = (d1 + d2) / bits_per_word + 1;
 #ifndef NDEBUG
   constexpr unsigned int bits_per_word  = c_b_t<word>::n >> 1;
   const size_t bound = (d1+d2) / bits_per_word + 1;
@@ -139,6 +139,12 @@ void binary_polynomial_multiply(
   binary_polynomial_to_words(c_b, p1, b1, d1, sz);
   binary_polynomial_to_words(c_b, p2, b2, d2, sz);
 
+  // instead of using mateer-gao directly, we could have used
+  //additive_fft<word> fft(c_b);
+  //fft.vzgg_mateer_gao_combination(b1, d1/bits_per_word + 1 , logsize);
+  //fft.vzgg_mateer_gao_combination(b2, d2/bits_per_word + 1 , logsize);
+  // but this does not help since in this case, the degree of the polynomials transformed
+  // is less that 2**logsize.
   fft_mateer_truncated<word,s>(c_b, b1, logsize);
   fft_mateer_truncated<word,s>(c_b, b2, logsize);
   for(size_t i = 0; i < sz; i++) b1[i] = c_b->multiply(b1[i], b2[i]);
