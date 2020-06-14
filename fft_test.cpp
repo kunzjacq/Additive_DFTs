@@ -626,45 +626,49 @@ int mateer_gao_dft_test(word* p_buffers, bool benchmark)
 #if 1
   // computing products of polynomials over f2 with mateer-gao fft and checking the result
   // with gf2x
-  for(unsigned int j = 0; j < sizeof(log_sz) / 4; j++)
+  if constexpr(c_b_t<word>::n >= 16)
   {
-    lsz = log_sz[j];
-    sz = 1uLL << lsz;
-    cout << endl << "Testing F2 polynomial product through FFTs. Multiplying 2 polynomials of degree " <<
-            sz/2 - 1 << ", in field of size 2**" << word_sz << endl;
-    if(lsz > min(log_buf_bitsize, c_b_t<word>::n))
+    for(unsigned int j = 0; j < sizeof(log_sz) / 4; j++)
     {
-      if(lsz > log_buf_bitsize) cout << "Resulting degree too large to fit into buffers for this test" << endl;
-      if(lsz > c_b_t<word>::n)  cout << "Resulting degree too large for the field size" << endl;
-      continue;
-    }
-    uint8_t* p1 = (uint8_t*) p_buffers;//new uint8_t[4 * sz];
-    uint8_t* p2 = p1 +     sz;
-    uint8_t* p3 = p1 + 2 * sz;
-    uint8_t* p4 = p1 + 3 * sz;
+      lsz = log_sz[j];
+      sz = 1uLL << lsz;
+      cout << endl << "Testing F2 polynomial product through FFTs. Multiplying 2 polynomials of degree " <<
+              sz/2 - 1 << ", in field of size 2**" << word_sz << endl;
+      if(lsz > min(log_buf_bitsize, c_b_t<word>::n))
+      {
+        if(lsz > log_buf_bitsize) cout << "Resulting degree too large to fit into buffers for this test" << endl;
+        if(lsz > c_b_t<word>::n)  cout << "Resulting degree too large for the field size" << endl;
+        continue;
+      }
+      uint8_t* p1 = (uint8_t*) p_buffers;//new uint8_t[4 * sz];
+      uint8_t* p2 = p1 +     sz;
+      uint8_t* p3 = p1 + 2 * sz;
+      uint8_t* p4 = p1 + 3 * sz;
 
-    buffer1 = p_buffers + 2 * sz; // FIXME this works by miracle!!
-    buffer2 = p_buffers + 3 * sz; // FIXME this works by miracle!!
+      //buffer1 and buffer2 are after the above buffers because sizeof(word) >= 2 bytes
+      buffer1 = p_buffers + 2 * sz;
+      buffer2 = p_buffers + 3 * sz;
 
-    memset(p1, 0, 4 * sz);
-    // create two random polynomials with sz/2 coefficients
-    for(size_t i = 0; i < sz / 16; i++)
-    {
-      p1[i] = rand() & 0xFF;
-      p2[i] = rand() & 0xFF;
+      memset(p1, 0, 4 * sz);
+      // create two random polynomials with sz/2 coefficients
+      for(size_t i = 0; i < sz / 16; i++)
+      {
+        p1[i] = rand() & 0xFF;
+        p2[i] = rand() & 0xFF;
+      }
+      // multiply polynomials with additive fft, put result in p4
+      binary_polynomial_multiply < word > ( &c, p1, p2, p4, buffer1, buffer2, sz/2 - 1, sz/2 - 1, lsz);
+      // multiply polynomials with gf2x, put result in p3
+      gf2x_mul(
+            (unsigned long *) p3,
+            (unsigned long *) p1,
+            sz/(2*sizeof(unsigned long)),
+            (unsigned long *) p2,
+            sz/(2*sizeof(unsigned long)));
+      // compare results
+      local_error = compare_results < uint8_t > (p3, p4, sz/8+1);
+      error |= local_error;
     }
-    // multiply polynomials with additive fft, put result in p4
-    binary_polynomial_multiply < word > ( &c, p1, p2, p4, buffer1, buffer2, sz/2 - 1, sz/2 - 1, lsz);
-    // multiply polynomials with gf2x, put result in p3
-    gf2x_mul(
-          (unsigned long *) p3,
-          (unsigned long *) p1,
-          sz/(2*sizeof(unsigned long)),
-          (unsigned long *) p2,
-          sz/(2*sizeof(unsigned long)));
-    // compare results
-    local_error = compare_results < uint8_t > (p3, p4, sz/8+1);
-    error |= local_error;
   }
 #endif
   if(benchmark)
