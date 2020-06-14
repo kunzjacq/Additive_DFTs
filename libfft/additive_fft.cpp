@@ -640,7 +640,7 @@ void additive_fft<word>::vzgg_mateer_gao_combination(
       for (int ik = 0; ik < nc; ik++) base[p_reductor_degrees[ik]] ^= c;
     }
   }
-  fft_mateer_truncated<word, c_b_t<word>::word_logsize>(m_c_b, p_poly, m);
+  fft_mateer_truncated<word, min(c_b_t<word>::word_logsize,6u)>(m_c_b, p_poly, m);
 }
 
 template <class word>

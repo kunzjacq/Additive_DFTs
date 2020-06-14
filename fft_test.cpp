@@ -14,7 +14,7 @@
 
 typedef uint32_t word;
 
-constexpr unsigned int log_buf_size = 28;
+constexpr unsigned int log_buf_size = 26;
 constexpr unsigned int log_buf_bitsize = log_buf_size + c_b_t<word>::word_logsize;
 
 constexpr bool verbose = false;
@@ -268,6 +268,11 @@ template <class word> int test_relations(const cantor_basis<word>& c_b, const wo
 
 int dft_inversion_test(word* p_buffers)
 {
+  if constexpr(c_b_t<word>::n>=32)
+  {
+    cout << "Word size too large for this test, skipping it" << endl;
+    return 0;
+  }
   unsigned int log_sz = c_b_t<word>::n;
   surand(5);
   cantor_basis<word> c;
@@ -279,8 +284,8 @@ int dft_inversion_test(word* p_buffers)
   {
     buf_sz <<= 1;
   }
-  cout << endl << endl << "Testing Inverse relation on Fourier Transform of polynomial of degree " <<
-          degree << ", in field of size 2**" << log_sz << endl;
+  cout << endl << endl << "Testing Inverse relation on Fourier Transform of polynomial of "
+          " degree " << degree << ", in field of size 2**" << log_sz << endl;
   if(buf_sz > (1uLL << log_buf_size))
   {
     cout << "degree too large to fit into buffers for this test" << endl;
@@ -358,6 +363,7 @@ int dft_inversion_test(word* p_buffers)
   return error;
 }
 
+template<class word>
 bool mateer_gao_full(word* p_buffers, cantor_basis<word>& c, bool benchmark)
 {
   uint64_t i;
@@ -416,7 +422,7 @@ bool mateer_gao_full(word* p_buffers, cantor_basis<word>& c, bool benchmark)
   for(i = 0 ; i < repeat; i++)
   {
     memcpy(buffer1, refIn, sz * sizeof(word));
-    fft_mateer(&c, buffer1, s);
+    fft_mateer<word ,s>(&c, buffer1);
   }
   t2 = (absolute_time() - t2) / repeat;
   if(benchmark)
@@ -460,54 +466,58 @@ int mateer_gao_dft_test(word* p_buffers, bool benchmark)
   cout << endl << endl << "Comparing regular additive DFT computation with Mateer-Gao additive DFT" << endl;
   cout << endl << "Testing full Mateer-Gao Fourier Transform of polynomial of degree " << degree <<
           " in field of size 2**" << word_sz << endl;
-  if(word_sz > log_buf_size)
+
+  if constexpr(c_b_t<word>::n<=32)
   {
-    cout << "Degree too large to fit into buffers for this test" << endl;
-  }
-  else
-  {
-    // testing full mateer-gao fft, and compare it to full regular additive dft
-    refIn   = p_buffers + 0 * sz;
-    refOut  = p_buffers + 1 * sz;
-    buffer1 = p_buffers + 2 * sz;
-    buffer2 = p_buffers + 3 * sz;
-    memset(refIn, 0, sz * sizeof(word));
-    for (i = 0; i <= degree; i++)
+    if(word_sz > log_buf_size)
     {
-      refIn[i] = static_cast<word>(urand());
+      cout << "Degree too large to fit into buffers for this test" << endl;
     }
-    cout << "Evaluating polynomial with additive DFT..." << endl;
-    memcpy(refOut, refIn, sz * sizeof(word));
-    fft.additive_fft_fast_in_place(refOut, degree, lsz, buffer1, 0);
-
-    cout << "Evaluating polynomial with Mateer-Gao DFT..." << endl;
-    memcpy(buffer1, refIn, sz * sizeof(word));
-    fft_mateer(&c, buffer1, s);
-    local_error = compare_results < word > (refOut, buffer1, sz);
-    error |= local_error;
-
-    if(benchmark)
+    else
     {
-      repeat = 16;
-      cout << "Benchmarking full Mateer-Gao DFT..." << endl;
-      t1 = absolute_time();
-      for(i = 0 ; i < repeat; i++)
+      // testing full mateer-gao fft, and compare it to full regular additive dft
+      refIn   = p_buffers + 0 * sz;
+      refOut  = p_buffers + 1 * sz;
+      buffer1 = p_buffers + 2 * sz;
+      buffer2 = p_buffers + 3 * sz;
+      memset(refIn, 0, sz * sizeof(word));
+      for (i = 0; i <= degree; i++)
       {
-        memcpy(refOut, refIn, sz * sizeof(word));
-        fft.additive_fft_fast_in_place(refOut, degree, lsz, buffer1, 0);
+        refIn[i] = static_cast<word>(urand());
       }
-      t1 = (absolute_time() - t1) / repeat;
-      cout << "time for regular additive DFT:  " << t1 / repeat << " sec." << endl;
-      t2 = absolute_time();
-      // blk_offset != 0 not supported by this method
-      for(i = 0 ; i < repeat; i++)
+      cout << "Evaluating polynomial with additive DFT..." << endl;
+      memcpy(refOut, refIn, sz * sizeof(word));
+      fft.additive_fft_fast_in_place(refOut, degree, lsz, buffer1, 0);
+
+      cout << "Evaluating polynomial with Mateer-Gao DFT..." << endl;
+      memcpy(buffer1, refIn, sz * sizeof(word));
+      fft_mateer<word, s>(&c, buffer1);
+      local_error = compare_results < word > (refOut, buffer1, sz);
+      error |= local_error;
+
+      if(benchmark)
       {
-        memcpy(buffer1, refIn, sz * sizeof(word));
-        fft_mateer(&c, buffer1, s); // adjust last arg to log of field logsize
+        repeat = 16;
+        cout << "Benchmarking full Mateer-Gao DFT..." << endl;
+        t1 = absolute_time();
+        for(i = 0 ; i < repeat; i++)
+        {
+          memcpy(refOut, refIn, sz * sizeof(word));
+          fft.additive_fft_fast_in_place(refOut, degree, lsz, buffer1, 0);
+        }
+        t1 = (absolute_time() - t1) / repeat;
+        cout << "time for regular additive DFT:  " << t1 / repeat << " sec." << endl;
+        t2 = absolute_time();
+        // blk_offset != 0 not supported by this method
+        for(i = 0 ; i < repeat; i++)
+        {
+          memcpy(buffer1, refIn, sz * sizeof(word));
+          fft_mateer<word, s>(&c, buffer1); // adjust last arg to log of field logsize
+        }
+        t2 = (absolute_time() - t2) / repeat;
+        cout << "time of Mateer-Gao DFT:  " <<  t2 / repeat << " sec." << endl;
+        cout << "speed ratio : " <<  t1 / t2 << endl;
       }
-      t2 = (absolute_time() - t2) / repeat;
-      cout << "time of Mateer-Gao DFT:  " <<  t2 / repeat << " sec." << endl;
-      cout << "speed ratio : " <<  t1 / t2 << endl;
     }
   }
 #else
@@ -523,7 +533,8 @@ int mateer_gao_dft_test(word* p_buffers, bool benchmark)
   {
     lsz = log_sz[j];
     if(lsz > c_b_t<word>::n) continue;
-    degree = 1uLL<< min(20u, c_b_t<word>::n);
+    sz = 1uLL << lsz;
+    degree = sz/2;//1uLL<< min(20u, c_b_t<word>::n);
 
     unsigned int buf_lsz = lsz;
     while ((1uLL << buf_lsz) <= degree) buf_lsz++;

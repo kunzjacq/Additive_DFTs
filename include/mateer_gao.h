@@ -468,84 +468,6 @@ void fft_aux_ref_truncated(
   }
 }
 
-template <class word>
-void fft_alt_truncated(
-    cantor_basis<word>* c_b,
-    word* poly,
-    unsigned int s, // log log of block size (for recursion: initialized with field log-log size)
-    word j, // block index to process
-    unsigned int logsize,
-    word* altbuf)
-// log2 size of each stride to be processed;
-// should be <= 2**s, the input is assumed to be of size 2**logsize and only the 2**logsize first output values are computed
-{
-  if(s == 0)
-  {
-    const word val = c_b->beta_to_gamma(j << 1);
-    poly[0]          ^= c_b->multiply(poly[1], val);
-    poly[1] ^= poly[0];
-  }
-  else
-  {
-    const unsigned int t = 1 << (s - 1);
-    if(logsize <= t)
-    {
-      fft_alt_truncated<word>(c_b, poly, s - 1, j << t, logsize, altbuf);
-    }
-    else
-    {
-      const uint64_t tau   = 1uL <<  (logsize - t);
-      const uint64_t eta   = 1uL << logsize;
-      // on input: there is 1 series of size 'eta' = 2**(2*logsize-t);
-      decompose_taylor(0, 2 * t, t, eta, poly);
-      // fft on columns
-      // if logsize >= t, each fft should process 2**(logsize - t) values
-      // i.e. logsize' = logsize - t
-
-      //input series is a matrix with  2**(logsize - t) rows and 2**t columns, in row order
-      //transpose matrix in-place (write it in column order)
-      const uint64_t column_size = tau;
-      const uint64_t row_size = 1uL << t;
-      //transpose(...);
-
-      for(size_t j = 0; j < row_size; j++)
-      {
-        for(size_t i = 0; i < column_size; i++)
-        {
-          // elt en pos i,j : j+ i*row_size
-          // echanger b*column_size + j, i et b*column_size+i,j
-          altbuf[i + j * column_size] = poly[j + i * row_size];
-        }
-      }
-
-      word* poly_loc = altbuf;
-      for(uint64_t i = 0; i < row_size; i++)
-      {
-        fft_alt_truncated<word>(c_b, poly_loc, s - 1, j, logsize - t, poly);
-        poly_loc += column_size;
-      }
-      // write the matrix in row order again
-      for(size_t j = 0; j < row_size; j++)
-      {
-        for(size_t i = 0; i < column_size; i++)
-        {
-          // elt en pos i,j : j+ i*row_size
-          // echanger b*column_size + j, i et b*column_size+i,j
-          poly[j + i * row_size] = altbuf[i + j * column_size];
-        }
-      }
-
-      poly_loc = poly;
-      for(uint64_t i = 0; i < column_size; i++)
-      {
-        word j_loop = (j << t) | i;
-        fft_alt_truncated<word>(c_b, poly_loc, s - 1, j_loop, t, altbuf);
-        poly_loc += row_size;
-      }
-    }
-  }
-}
-
 template <class word, int s>
 void fft_aux_ref_truncated_reverse(
     cantor_basis<word>* c_b,
@@ -592,16 +514,15 @@ void fft_aux_ref_truncated_reverse(
   }
 }
 
-template <class word>
+template <class word, int s>
 void fft_aux_fast(
     cantor_basis<word>* c_b,
     word* poly,
-    unsigned int s,
     word j,
     unsigned int logstride,
     unsigned int log_outer_parallelism)
 {
-  if(s == 0)
+  if constexpr(s == 0)
   {
     uint64_t stride = 1uL << logstride;
     word val = c_b->beta_to_gamma(j << 1);
@@ -642,7 +563,8 @@ void fft_aux_fast(
   else
   {
     const unsigned int t = 1 << (s - 1);
-    const uint64_t eta = 1uL << (2 * t);
+    // const uint64_t eta = 1uL << (2 * t);
+    // replaced the eta value in-line to avoid overflow when s = 6 (word = uint64_t).
     const uint64_t outer_block_size = 1uL << (2 * t + logstride);
     word* poly_loc = poly;
     for(uint64_t loop = 0; loop < (1uL << log_outer_parallelism); loop++)
@@ -656,7 +578,8 @@ void fft_aux_fast(
         const size_t num_iter_a = delta_s;
         const size_t num_iter_b = m_s - delta_s;
         word *p1 = poly_loc + delta_s, *p2 = poly_loc + (n_s - delta_s), *p3 = poly_loc + m_s;
-        for(size_t i = 0; i < (eta >> interval_logsize); i ++)
+        //for(size_t i = 0; i < (eta >> interval_logsize); i ++)
+        for(size_t i = 0; i < (1uLL << (2*t - interval_logsize)); i ++)
         {
           for(uint64_t p = 0; p < num_iter_a; p++) p1[p] ^= p2[p];
           for(uint64_t p = 0; p < num_iter_b; p++) p1[p] ^= p3[p];
@@ -667,8 +590,8 @@ void fft_aux_fast(
         }
       }
       uint64_t j_loop = j|loop;
-      fft_aux_fast<word>(c_b, poly_loc, s-1, j_loop,        logstride + t, 0);
-      fft_aux_fast<word>(c_b, poly_loc, s-1, (j_loop << t), logstride,     t);
+      fft_aux_fast<word, s-1>(c_b, poly_loc, j_loop,        logstride + t, 0);
+      fft_aux_fast<word, s-1>(c_b, poly_loc, (j_loop << t), logstride,     t);
       poly_loc += outer_block_size;
     }
   }
@@ -731,7 +654,9 @@ void fft_aux_fast_truncated(
     }
     else
     {
-      const uint64_t eta   = 1uL << logsize;
+      //const uint64_t eta   = 1uLL << logsize;
+      // replaced the eta value in-line as in fft_aux_fast although no overflow is possible here
+      // (assuming logsize < 64, which seems safe)
       const uint64_t outer_block_size = 1uL << (2 * t + logstride);
       for(uint64_t loop = 0; loop < (1uL << log_outer_parallelism); loop++)
       {
@@ -744,7 +669,8 @@ void fft_aux_fast_truncated(
           const size_t num_iter_a = delta_s;
           const size_t num_iter_b = m_s - delta_s;
           word *p1 = poly + delta_s, *p2 = poly + (n_s - delta_s), *p3 = poly + m_s;
-          for(size_t i = 0; i < (eta >> interval_logsize); i ++)
+          //for(size_t i = 0; i < (eta >> interval_logsize); i ++)
+          for(size_t i = 0; i < (1uLL << (logsize - interval_logsize)); i ++)
           {
             for(uint64_t p = 0; p < num_iter_a; p++) p1[p] ^= p2[p];
             for(uint64_t p = 0; p < num_iter_b; p++) p1[p] ^= p3[p];
@@ -847,51 +773,62 @@ void fft_aux_fast_truncated_reverse(
   }
 }
 
-// performs a dft of size 2**(2**s) = u
-// s = 3 : 2**8
-// s = 4 : 2**16
-// s = 5 : 2**32
-// s = 6 which should be 2**64 is not processed correctly (uint64_t eta = 1uL<<(1<<s) overflows)
-// input polynomial should have at most u coefficients, i.e. have degree at most u-1
-template <class word>
-void fft_mateer(cantor_basis<word>* c_b, word* poly, unsigned int s)
+/* performs a full DFT of size 2**(2**s) = u of a polynomial with coefficients of type 'word'
+ * expressed in the finite field implemented by cantor basis c_b.
+ * s = 3: u=2**8
+ * s = 4: u=2**16
+ * s = 5: u=2**32
+ * s = 6: u=2**64
+ * input polynomial should have at most u coefficients, i.e. have degree at most u-1.
+ * no optimization is performed for small degree polynomials (the degree is not given as
+ * a parameter to the algorithm)
+ * with s = 6, variant fft_aux_ref does not work (uint64_t eta = 1uL<<(1<<s) overflows)
+ * s = 6 cannot be used realistically anyway (the input/output is 2**67 bytes!!!)
+ * therefore s=6 is forbidden.
+ * u = 2**(2**s) and the finite field size f can be controlled independently: the cases
+ * u > s, u = s (the most natural) and u < s work provided the condition on the input
+ * polynomial degree is met.
+*/
+template <class word, int s>
+void fft_mateer(cantor_basis<word>* c_b, word* poly)
 {
-  if(s >= 6) throw 0;
+  static_assert(c_b_t<word>::n<=64);
+  static_assert(s<=5);
 #if 0
   fft_aux_ref<word>(c_b, poly, s, 0, 0);
 #else
-  fft_aux_fast<word>(c_b, poly, s, 0, 0, 0);
+  fft_aux_fast<word, s>(c_b, poly, 0, 0, 0);
 #endif
 }
 
-// computes a truncated dft of the first u=2**logsize values
-// input polynomial should have at most u coefficients, i.e. have degree at most u-1
-// FIXME the arrays needs to be 0 after index u: k non-zero term after index u cause
-// the first k terms of the results to be wrong (the non-zero terms are XORed to the result)
-// this is not normal, as it means that the code accesses these indexes
-// this happens with fft_aux_ref_truncated and fft_aux_fast_truncated
+/* as fft_mateer, but computes only the first v=2**logsize values, with v <= u = 2**(2**s).
+ * input polynomial should have at most v coefficients, i.e. have degree at most v-1.
+ * s=6 can be used. beyond s=6, since all variables controlling loops are uint64_t, some
+ * overflows may occur during the computation of loop indexes, even if these indexes are
+ * small, and the computation may fail.
+ * s can be set at the minimum value s.t v <= 2**(2**s). The computation time does not depend
+ * much on s and it can therefore be set at min(6, log of word size) safely even if this
+ * results in a value that is too large.
+ */
 template <class word, int s>
 void fft_mateer_truncated(cantor_basis<word>* c_b, word* poly, unsigned int logsize)
 {
-  if(s >= 6) throw 0;
+  static_assert(s<=6);
   if(logsize > (1u << s)) logsize = 1 << s;
-#if 0
+#if 1
   fft_aux_ref_truncated<word, s>(c_b, poly, 0, 0, logsize);
-#else
-#if 0
-  word* buf = new word[1uLL << logsize];
-  unique_ptr<word[]> _(buf);
-  fft_alt_truncated<word>(c_b, poly, s, 0, logsize, buf);
 #else
   fft_aux_fast_truncated<word, s>(c_b, poly, 0, 0, 0, logsize);
 #endif
-#endif
 }
 
+/* Reverse function of fft_mateer_truncated.
+ *
+ */
 template <class word, int s>
 void fft_mateer_truncated_reverse(cantor_basis<word>* c_b, word* poly, unsigned int logsize)
 {
-  if(s >= 6) throw 0;
+  static_assert(s<=6);
   if(logsize > (1u << s)) logsize = 1 << s;
 #if 1
   fft_aux_ref_truncated_reverse<word,s>(c_b, poly, 0, 0, logsize);
