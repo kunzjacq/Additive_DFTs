@@ -11,7 +11,7 @@ A combination of Wang-Zhu-Cantor and Mateer-Gao is also implemented to tackle th
 
 Mateer-Gao DFT is used to implement a fast multiplication of binary polynomials (see https://cr.yp.to/f2mult.html). It is tested and benched against a very fast algorithm to perform such multiplications, implemented in library `gf2x` (https://gforge.inria.fr/projects/gf2x/). Overall the DFT approach is slower, but for large size the speed ratio is about 10, which is not so bad since the DFT implementation does not use any assembly. For small sizes the ratio is much higher however; memory requirements of the DFT implementation are also higher, mainly due to the need to convert the polynomials between several representations before doing the actual DFT work. 
 
-This project is more about experimenting with these nice algorithms than trying to compete with gf2x or any other optimized polynomial computation library. As such, reference implementations that are close to the high-level description of the algorithms are kept alongsize more optimized versions that are more difficult to read.
+This project is more about experimenting with these nice algorithms than trying to compete with gf2x or any other optimized polynomial computation library. As such, reference implementations that are close to the high-level description of the algorithms are kept alongside more optimized versions that are more difficult to read.
 
 ## Build instructions
 A compiled version of gf2x for the target platform must be placed in `lib/` (for linux) or `lib_mingw` (for windows/). For windows, MinGW gcc usage is assumed, for instance with the version that comes with MSYS2. cmake is needed, the usual cmake build process applies (in a build dir separate from the source dir $SOURCE_DIR):
