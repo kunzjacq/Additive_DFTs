@@ -15,6 +15,7 @@ This project is more about experimenting with these nice algorithms than trying 
 
 ## Build instructions
 A compiled version of gf2x for the target platform must be placed in `lib/` (for linux) or `lib_mingw` (for windows/). For windows, MinGW gcc usage is assumed, for instance with the version that comes with MSYS2. cmake is needed, the usual cmake build process applies (in a build dir separate from the source dir $SOURCE_DIR):
+
     cmake $SOURCE_DIR/CMake
     make
 
