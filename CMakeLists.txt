@@ -18,6 +18,11 @@ else()
   link_directories("${PROJECT_SOURCE_DIR}/lib")
 endif()
 
+if("$ENV{CUSTOM_LIBS}" STREQUAL "")
+else()
+  link_directories("$ENV{CUSTOM_LIBS}/lib")
+endif()
+
 if(LTO)
   message("Turning on link-time optimization")
   set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)

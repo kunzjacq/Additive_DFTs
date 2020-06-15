@@ -222,11 +222,11 @@ void additive_fft<word>::additive_fft_ref_in_place(
       if(debug && j <= 1)
       {
         cout << "r:" << endl;
-        print_series<word>(poly_ij, ho, min(ho, 8uL));
+        print_series<word>(poly_ij, ho, min(ho, 8uLL));
         if(compute_dividend)
         {
           cout << "q:" << endl;
-          print_series<word>(poly_ij+ho, ho, min(ho, 8uL));
+          print_series<word>(poly_ij+ho, ho, min(ho, 8uLL));
 
         }
       }
