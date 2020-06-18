@@ -428,8 +428,8 @@ bool is_primitive(word v, const T &c_b)
 {
   static const vector<uint64_t> factors = {3, 5, 17, 257, 65537, 641, 6700417, 274177, 67280421310721};
   static const vector<unsigned int> num_factors = {3, 4, 5, 7, 9};
-  const unsigned int sz_log = c_b_t<word>::word_logsize;
-  if(sz_log < 3 || sz_log > 7) return false;
+  constexpr unsigned int sz_log = c_b_t<word>::word_logsize;
+  static_assert (sz_log >= 3 && sz_log <= 7);
   bool is_primitive = true;
   for(unsigned int j = 0; j < num_factors[sz_log - 3]; j++)
   {

@@ -99,7 +99,7 @@ void additive_fft<word>::fft_direct_exp(
 {
   if(m == 0)  m = c_b_t<word>::n;
   else        m = min(m, c_b_t<word>::n);
-  if(m >= max_dft_size) {
+  if(m > max_dft_size) {
     cout << "FFT size requested is too large!" << endl;
     return;
   }
@@ -131,7 +131,7 @@ void additive_fft<word>::additive_fft_ref_in_place(
 {
   if(m == 0)  m = c_b_t<word>::n;
   else        m = min(m, c_b_t<word>::n);
-  if(m >= max_dft_size) {
+  if(m > max_dft_size) {
     cout << "FFT size requested is too large!" << endl;
     return;
   }
@@ -222,11 +222,11 @@ void additive_fft<word>::additive_fft_ref_in_place(
       if(debug && j <= 1)
       {
         cout << "r:" << endl;
-        print_series<word>(poly_ij, ho, min(ho, 8uLL));
+        print_series<word>(poly_ij, ho, min<uint64_t>(ho, 8));
         if(compute_dividend)
         {
           cout << "q:" << endl;
-          print_series<word>(poly_ij+ho, ho, min(ho, 8uLL));
+          print_series<word>(poly_ij+ho, ho, min<uint64_t>(ho, 8));
 
         }
       }
@@ -251,7 +251,7 @@ void additive_fft<word>::additive_fft_fast_in_place(
 {
   if(m == 0)  m = c_b_t<word>::n;
   else        m = min(m, c_b_t<word>::n);
-  if(m >= max_dft_size) {
+  if(m > max_dft_size) {
     cout << "FFT size requested is too large!" << endl;
     return;
   }
@@ -414,7 +414,7 @@ void additive_fft<word>::additive_fft_rev_ref_in_place(
 {
   if(m == 0)  m = c_b_t<word>::n;
   else        m = min(m, c_b_t<word>::n);
-  if(m >= max_dft_size) {
+  if(m > max_dft_size) {
     cout << "FFT size requested is too large!" << endl;
     return;
   }
@@ -491,7 +491,7 @@ void additive_fft<word>::additive_fft_rev_fast_in_place(
 {
   if(m == 0)  m = c_b_t<word>::n;
   else        m = min(m, c_b_t<word>::n);
-  if(m >= max_dft_size) {
+  if(m > max_dft_size) {
     cout << "FFT size requested is too large!" << endl;
     return;
   }
@@ -602,7 +602,7 @@ void additive_fft<word>::vzgg_mateer_gao_combination(
 {
   if(m == 0)  m = c_b_t<word>::n;
   else        m = min(m, c_b_t<word>::n);
-  if(m >= max_dft_size) {
+  if(m > max_dft_size) {
     cout << "FFT size requested is too large!" << endl;
     return;
   }
