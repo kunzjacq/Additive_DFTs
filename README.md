@@ -13,20 +13,20 @@ Mateer-Gao DFT is used to implement a fast multiplication of binary polynomials 
 
 This project is more about experimenting with these nice algorithms than trying to compete with gf2x or any other optimized polynomial computation library. As such, reference implementations that are close to the high-level description of the algorithms are kept alongside more optimized versions that are more difficult to read.
 
-Cantor bases are available for field sizes above 2^{64} thanks to Boost large integers (which is optional). The cantor basis test program checks the construction up to 2^{2048}. In theory, truncated Wang-Zhu-Cantor DFT should work in such large fields, however it was not tested and some bugs may be present due to overflows in the handling of loop indexes, which are all of type uint64_t. There is probably little interest to use these field sizes for truncated DFTs; full DFTs are of course totally unrealistic for these sizes.
+Cantor bases are available for field sizes above 2^{64} thanks to the optional use of Boost::multiprecision which implements large integers. With this library, the cantor basis test program tests the construction in finite fields of size up to 2^{2048}. In theory, truncated Wang-Zhu-Cantor DFT should work in such large fields, however it was not tested and some bugs may be present due to overflows in the handling of loop indexes, which are all of type uint64_t. There is probably little interest to use these field sizes for truncated DFTs; full DFTs are of course totally unrealistic in these cases.
 
 ## Build instructions
-A compiled version of gf2x for the target platform must be placed in `lib/` (for linux) or `lib_mingw` (for windows/). For windows, MinGW gcc usage is assumed, for instance with the version that comes with MSYS2. cmake is needed, the usual cmake build process applies (in a build dir separate from the source dir $SOURCE_DIR):
+A compiled version of gf2x for the target platform must be placed in `lib/` (for linux) or `lib_mingw/` (for windows). For windows, MinGW gcc usage is assumed, for instance with the version that comes with MSYS2. cmake is needed, the usual cmake build process applies (in a build dir separate from the source dir $SOURCE_DIR):
 
     cmake $SOURCE_DIR
     make
 
 To make an optimized build, add `-DCMAKE_BUILD_TYPE=Release` to the cmake invocation.
 
-There are two targets: `cantor_basis_test` which performs various consistency checks on cantor basis construction; and `fft_test` which enables to test and benchmark the DFT algorithms discussed above. If Boost::multiprecision   (https://www.boost.org/doc/libs/1_73_0/libs/multiprecision/doc/html/index.html) is detected, Cantor bases and DFT objects can be instantiated for all sizes for which large integers from this library are available. They are not tested however.
+There are two targets: `cantor_basis_test` which performs various consistency checks on cantor basis construction; and `fft_test` which enables to test and benchmark the DFT algorithms discussed above. If Boost::multiprecision   (https://www.boost.org/doc/libs/1_73_0/libs/multiprecision/doc/html/index.html) is detected, Cantor bases and DFT objects can be instantiated for all sizes for which large integers are available from this library. They are however not tested (see above).
 
-The binary field used in tests and the size of the buffer used, which determine what tests can be run, can be adjusted at the top of `fft_test.cpp`.
+The binary field used in tests and the size of the buffer used, which determine what tests can be run, can be adjusted at compile-time at the top of `fft_test.cpp`.
 
 ## TODO
-  * implement more combinations of several algorithms to improve performance on truncated cases.
+  * implement more combinations of algorithms to improve performance on truncated cases.
   * optimize the underlying finite field multiplications, with assembly and/or batch computing functions.
