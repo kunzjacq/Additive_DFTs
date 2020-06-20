@@ -35,6 +35,8 @@ static bool additive_dft_test(
 static bool reverse_dft_test(
     word* p_buffers,
     cantor_basis<word> &c,
+    unsigned int* log_sz,
+    unsigned int num_sz,
     bool check_correctness,
     bool benchmark);
 static bool full_mateer_gao_test(
@@ -69,7 +71,11 @@ static bool mateer_gao_product_test(
 static bool dft_inversion_test(
     word* p_buffers,
     cantor_basis<word>& c);
-
+static bool decompose_taylor_test(
+    word* p_buffers,
+    bool check_correctness,
+    bool benchmark
+    );
 
 int main(int UNUSED(argc), char** UNUSED(argv))
 {
@@ -89,7 +95,7 @@ int main(int UNUSED(argc), char** UNUSED(argv))
   }
   if constexpr(true)
   {
-    bool reverse_fft_error = reverse_dft_test(buffers, c, check_correctness, benchmark);
+    bool reverse_fft_error = reverse_dft_test(buffers, c, log_sz, num_sz, check_correctness, benchmark);
     if(reverse_fft_error) cout << "reverse_dft_test failed" << endl;
     error |= reverse_fft_error;
   }
@@ -119,7 +125,7 @@ int main(int UNUSED(argc), char** UNUSED(argv))
   error |= mateer_gao_error;
   if constexpr(true)
   {
-    bool decompose_taylor_error = decompose_taylor_test<uint32_t>();
+    bool decompose_taylor_error = decompose_taylor_test(buffers, check_correctness, benchmark);
     error |= decompose_taylor_error;
   }
   if constexpr(true)
@@ -221,25 +227,30 @@ bool additive_dft_test(
 }
 
 
-bool reverse_dft_test(word* p_buffers, cantor_basis<word>& c, bool check_correctness, bool benchmark)
+bool reverse_dft_test(
+    word* p_buffers,
+    cantor_basis<word>& c,
+    unsigned int* log_sz,
+    unsigned int num_sz,
+    bool check_correctness,
+    bool benchmark)
 {
   uint32_t i;
-  unsigned int log_sz[] = {8, 12, 16, 24};
   int local_error, error = false;
   surand(5);
   cout << endl << endl << "Reverse Von zur Gathen - Gerhard additive DFT test" << endl;
-  for(unsigned int j = 0; j < sizeof(log_sz) / 4; j++)
+  for(unsigned int j = 0; j < num_sz; j++)
   {
     unsigned int lsz = log_sz[j];
     if(lsz > c_b_t<word>::n) continue;
     const uint64_t sz = 1uLL << lsz;
     // for this test, the degree must be below the fft subblock size
     uint64_t degree = sz - 2;
-    const uint64_t blk_offset = urand() & ((1uLL << (c_b_t<word>::n - log_sz[j])) - 1); // must be < (field size) / (sz)
+    const uint64_t blk_offset = urand() & ((1uLL << (c_b_t<word>::n - lsz)) - 1); // must be < (field size) / (sz)
     uint32_t word_sz = c_b_t<word>::n;
     additive_fft<word> fft(&c);
     cout << endl << "Testing reverse additive DFT of polynomial of degree " << degree <<
-            ", on 2**" <<  log_sz[j] << " points, in field of size 2**" << word_sz << endl;
+            ", on 2**" <<  lsz << " points, in field of size 2**" << word_sz << endl;
     word* refIn, *buffer1, *buffer2;
 
     refIn   = p_buffers + 0 * sz;
@@ -389,16 +400,14 @@ bool truncated_mateer_gao_dft_test(
   uint64_t i;
   double t1 = 0, t2 = 0;
   bool local_error, error = false;
-  surand(5);
-  uint32_t word_sz = c_b_t<word>::n;
+  uint32_t field_logsz = c_b_t<word>::n;
 
   word* refIn = nullptr, *refOut = nullptr, *buffer1 = nullptr, *buffer2 = nullptr;
   unsigned int lsz;
   uint64_t degree;
   uint64_t sz;
-  lsz = word_sz;
+  lsz = field_logsz;
   sz = 1uLL << lsz;
-  degree = sz - 1;
   additive_fft<word> fft(&c);
 
   cout << endl << endl << "Truncated Mateer-Gao DFT test" << endl;
@@ -408,33 +417,27 @@ bool truncated_mateer_gao_dft_test(
     lsz = log_sz[j];
     if(lsz > c_b_t<word>::n) continue;
     sz = 1uLL << lsz;
-    degree = sz/2;//1uLL<< min(20u, c_b_t<word>::n);
-
+    degree = sz - 1;//1uLL<< min(20u, c_b_t<word>::n);
     unsigned int buf_lsz = lsz;
     while ((1uLL << buf_lsz) <= degree) buf_lsz++;
-    sz = 1uLL << buf_lsz;
-    cout << endl << "Testing truncated Mateer-Gao Fourier Transform of polynomial of degree " <<
-            degree << ", on 2**" <<  lsz << " points, in field of size 2**" << word_sz << endl;
-    if(sz > allocated_buf_size)
+    uint64_t buf_sz = 1uLL << buf_lsz;
+    uint64_t check_sz = min<uint64_t>(1uLL << 12, sz);
+    if(2 * buf_sz + (buf_sz >> 2) + check_sz > allocated_buf_size)
     {
       cout << "Degree too large to fit into allocated buffer for this test" << endl;
       continue;
     }
-
     refIn   = p_buffers;
-    buffer1 = refIn + sz;
-    buffer2 = buffer1 + sz;
-    refOut  = buffer2 + (sz >> 2);
+    buffer1 = refIn + buf_sz;
+    buffer2 = buffer1 + buf_sz;
+    refOut  = buffer2 + (buf_sz >> 2);
+    surand(5);
+    for (i = 0; i <= degree; i++) refIn[i] = static_cast<word>(urand());
+    for(; i < sz; i++) refIn[i] = 0;
     if(check_correctness)
     {
-      uint64_t check_sz = min<uint64_t>(1uLL << 12, sz);
-      for (i = 0; i <= degree; i++) refIn[i] = static_cast<word>(urand());
-      for(; i < sz; i++) refIn[i] = 0;
-      if(verbose)
-      {
-        cout << "Polynomial constant term: " << hex << refIn[0] << dec << endl;
-        cout << "Evaluating polynomial with truncated regular additive DFT..." << endl;
-      }
+      cout << endl << "Testing truncated Mateer-Gao Fourier Transform of polynomial of degree " <<
+              degree << ", on 2**" <<  lsz << " points, in field of size 2**" << field_logsz << endl;
       memcpy(buffer1, refIn, (degree+1) * sizeof(word));
       fft.additive_fft_fast_in_place(buffer1, degree, lsz, buffer2, 0);
       for( i = 0; i < check_sz; i++) refOut[i] = buffer1[i];
@@ -451,8 +454,8 @@ bool truncated_mateer_gao_dft_test(
       i = 0;
       do
       {
-        memcpy(buffer2, refIn, sz * sizeof(word));
-        fft.additive_fft_fast_in_place(buffer2, degree, lsz, buffer1, 0);
+        memcpy(buffer1, refIn, sz * sizeof(word));
+        fft.additive_fft_fast_in_place(buffer1, degree, lsz, buffer1, 0);
         i++;
       }
       while(absolute_time() <= t1 + 1);
@@ -487,18 +490,16 @@ bool reverse_truncated_mateer_gao_dft_test(
     bool benchmark)
 {
   uint64_t i;
+  double t1 = 0, t2 = 0;
   constexpr unsigned int s = c_b_t<word>::word_logsize;
   bool local_error, error = false;
-  surand(5);
-  uint32_t field_sz = c_b_t<word>::n;
+  uint32_t field_logsz = c_b_t<word>::n;
 
-  word* refIn = nullptr, *buffer1 = nullptr;
+  word* refIn = nullptr, *refOut = nullptr, *buffer1 = nullptr, *buffer2 = nullptr;
   unsigned int lsz;
-  uint64_t degree;
   uint64_t sz;
-  lsz = field_sz;
+  lsz = field_logsz;
   sz = 1uLL << lsz;
-  degree = sz - 1;
   additive_fft<word> fft(&c);
   cout << endl << endl << "Reverse truncated Mateer-Gao DFT test" << endl;
   // testing that fft_mateer_truncated_reverse \circ fft_mateer_truncated = id
@@ -507,51 +508,69 @@ bool reverse_truncated_mateer_gao_dft_test(
     lsz = log_sz[j];
     if(lsz > c_b_t<word>::n) continue;
     sz = 1uLL << lsz;
+    unsigned int buf_lsz = lsz;
+    uint64_t buf_sz = 1uLL << buf_lsz;
+    uint64_t check_sz = min<uint64_t>(1uLL << 12, sz);
+    if(2 * buf_sz + (buf_sz >> 2) + check_sz > allocated_buf_size)
+    {
+      cout << "degree too large to fit into allocated buffer for this test" << endl;
+      continue;
+    }
+    refIn   = p_buffers;
+    buffer1 = refIn + buf_sz;
+    buffer2 = buffer1 + buf_sz;
+    refOut  = buffer2 + (buf_sz >> 2);
+
+    surand(5);
+    for(i = 0; i < sz; i++) refIn[i] = static_cast<word>(urand());
     if(check_correctness)
     {
-      uint64_t check_sz = min<uint64_t>(1uLL << 12, sz);
-      degree = sz - 1;
-      cout << endl << "Testing reverse truncated Mateer-Gao Fourier Transform of polynomial of degree " <<
-              degree << ", on 2**" <<  lsz << " points, in field of size 2**" << field_sz << endl;
-      if(sz + check_sz > allocated_buf_size)
-      {
-        cout << "degree too large to fit into allocated buffer for this test" << endl;
-        continue;
-      }
-      refIn   = p_buffers;
-      buffer1 = refIn + sz; // size check_sz
-      for(i = 0; i <= degree; i++) refIn[i] = static_cast<word>(urand());
-      for(; i < sz; i++) refIn[i] = 0;
-      memcpy(buffer1, refIn, check_sz * sizeof(word));
-      fft_mateer_truncated<word,s>(&c, refIn, lsz);
-      fft_mateer_truncated_reverse<word,s>(&c, refIn, lsz);
-      local_error = compare_results < word > (refIn, buffer1, check_sz);
+      cout << endl << "Testing reverse truncated Mateer-Gao Fourier Transform " <<
+              ", on 2**" <<  lsz << " points, in field of size 2**" << field_logsz << endl;
+
+      memcpy(buffer1, refIn, sz * sizeof(word));
+      fft.additive_fft_rev_fast_in_place(buffer1, lsz, buffer2, 0);
+      for( i = 0; i < check_sz; i++) refOut[i] = buffer1[i];
+      if(verbose) cout << "Applying reverse truncated Mateer-Gao DFT..." << endl;
+      memcpy(buffer1, refIn, sz * sizeof(word));
+      fft_mateer_truncated_reverse<word,s>(&c, buffer1, lsz);
+
+      local_error = compare_results < word > (buffer1, refOut, check_sz);
       error |= local_error;
     }
     if(benchmark)
     {
-      degree = sz - 1;
-      cout << endl << "Benchmarking reverse truncated Mateer-Gao Fourier Transform of polynomial of degree "
-           << degree << ", on 2**" <<  lsz << " points, in field of size 2**" << field_sz << endl;
-      if(sz > allocated_buf_size)
-      {
-        cout << "degree too large to fit into buffers for this test" << endl;
-        continue;
-      }
-      refIn   = p_buffers + 0 * sz;
-      double t1 = absolute_time();
+      cout << endl << "Benchmarking reverse truncated Mateer-Gao Fourier Transform " <<
+           ", on 2**" <<  lsz << " points, in field of size 2**" << field_logsz << endl;
+
+      t1 = absolute_time();
       i = 0;
       do
       {
-        fft_mateer_truncated_reverse<word,s>(&c, refIn, lsz);
+        memcpy(buffer1, refIn, sz * sizeof(word));
+        fft.additive_fft_rev_fast_in_place(buffer1, lsz, buffer2, 0);
         i++;
       }
       while(absolute_time() <= t1 + 1);
       t1 = (absolute_time() - t1) / i;
-      cout << "Time of reverse truncated Mateer-Gao DFT:  " <<  t1 << " sec." << endl;
+      cout << "time of reverse truncated regular additive DFT:  " << t1 << " sec." << endl;
+
+      t2 = absolute_time();
+      i = 0;
+      do
+      {
+        memcpy(buffer1, refIn, sz * sizeof(word));
+        fft_mateer_truncated_reverse<word,s>(&c, buffer1, lsz);
+        i++;
+      }
+      while(absolute_time() <= t2 + 1);
+      t2 = (absolute_time() - t2) / i;
+
+      cout << "Time of reverse truncated Mateer-Gao DFT:  " <<  t2 << " sec." << endl;
+      cout << "Reverse truncated MG / reverse truncated VzGG speed ratio: " << t1 / t2 << endl;
       if(has_truncated_times)
       {
-        cout << "Reverse truncated MG / truncated MG speed ratio: " << truncated_times[j] / t1 << endl;
+        cout << "Reverse truncated MG / truncated MG speed ratio: " << truncated_times[j] / t2 << endl;
       }
     }
   }
@@ -798,3 +817,89 @@ int test_relations(const cantor_basis<word>& c_b, const word& x)
   return 0;
 }
 
+bool decompose_taylor_test(
+    word* p_buffers,
+    bool check_correctness,
+    bool benchmark
+    )
+{
+  unsigned int logtau = 1;
+  unsigned int logstride = 1;
+  size_t max_sz = 1uLL << 10;
+  size_t min_sz = 0;
+  size_t large_sz = 1uLL << 24;
+  size_t array_sz = max(large_sz, max_sz << logstride);
+  word* copy = p_buffers + array_sz;
+  word* ref  = p_buffers + 2*array_sz;
+  uint64_t size_needed = 3*(array_sz<<logstride);
+  if(size_needed > allocated_buf_size)
+  {
+    cout << "Allocated buffer too small for this test, skipping" << endl;
+    return false;
+  }
+
+  unsigned int logblocksize = 0;
+  bool error = false;
+  if(check_correctness)
+  {
+    cout << endl << endl << "Test Taylor decomposition used in Mateer-Gao FFT" << endl;
+    for(size_t sz = min_sz; sz < max_sz; sz++)
+    {
+      while((1uL << logblocksize) < sz) logblocksize++;
+      memset(p_buffers, 0, (sz << logstride) * sizeof(word));
+      for(size_t i = 0; i < (sz << logstride); i++)
+      {
+        p_buffers[i] = urand();
+        copy[i] = p_buffers[i];
+        ref[i]  = p_buffers[i];
+      }
+
+      decompose_taylor_recursive(logstride, logblocksize, logtau, sz, p_buffers);
+      // compare output of decompose_taylor_iterative to output of decompose_taylor
+      decompose_taylor(logstride, logblocksize, logtau, sz, copy);
+      if(memcmp(p_buffers, copy, (sz << logstride) * sizeof(word))) error = true;
+
+      decompose_taylor_reverse_recursive(logstride, logblocksize, logtau, sz, p_buffers);
+      if(memcmp(p_buffers, ref, (sz << logstride) * sizeof(word))) error = true;
+    }
+
+    if(error == 0) cout << "Taylor decomposition succeeded" << endl;
+    else cout << "Taylor decomposition failed" << endl;
+  }
+  if(benchmark)
+  {
+    cout << "Taylor decomposition benchmark" << endl;
+    // process a large instance, for benchmarking purposes
+    while((1uL << logblocksize) < large_sz) logblocksize++;
+    for(size_t i = 0; i < large_sz; i++)
+    {
+      p_buffers[i] = urand();
+      copy[i] = p_buffers[i];
+    }
+    init_time();
+    double t1, t2;
+    t1 = absolute_time();
+    decompose_taylor_recursive(0, logblocksize, logtau, large_sz, copy);
+    t2 = absolute_time();
+    t1 = t2 - t1;
+    decompose_taylor(0, logblocksize, logtau, large_sz, p_buffers);
+    t2 = absolute_time() - t2;
+    cout << "Iterative time: " << t2 << endl;
+    cout << "Recursive time: " << t1 << endl;
+    cout << "Taylor decomposition iterative / recursive speed ratio: " << t1 / t2 << endl;
+
+    cout << "Reverse Taylor decomposition benchmark" << endl;
+    t1 = absolute_time();
+    decompose_taylor_reverse_recursive(0, logblocksize, logtau, large_sz, copy);
+    t2 = absolute_time();
+    t1 = t2 - t1;
+    decompose_taylor_reverse(0, logblocksize, logtau, large_sz, p_buffers);
+    t2 = absolute_time() - t2;
+    cout << "Iterative time: " << t2 << endl;
+    cout << "Recursive time: " << t1 << endl;
+    cout << "Taylor decomposition iterative / recursive speed ratio: " << t1 / t2 << endl;
+
+
+  }
+  return error;
+}

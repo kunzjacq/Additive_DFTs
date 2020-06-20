@@ -49,7 +49,7 @@ int check_decompose_taylor_one_step(
  * @param num_coeffs
  * the number of coefficients of polynomial f (i.e. degree(f) + 1)
  * @param delta
- * a number that divides n/2.
+ * a number that divides n/2 (therefore a power of 2).
  * @param n
  * the smallest power of 2 >= num_coeffs.
  * (if n is not a power of 2, the output of the algorithm will be incorrect)
@@ -135,7 +135,7 @@ int check_decompose_taylor_one_step(
     uint64_t delta,
     unsigned int logstride)
 {
-  int error = 0;
+  bool error = false;
   const uint64_t delta_s      = delta      << logstride;
   const uint64_t m_s          = m          << logstride;
   const uint64_t num_coeffs_s = num_coeffs << logstride;
@@ -145,7 +145,7 @@ int check_decompose_taylor_one_step(
   {
     if(ref[i])
     {
-      error = 1;
+      error = true;
       break;
     }
   }
@@ -198,6 +198,39 @@ void decompose_taylor_recursive(
   {
     decompose_taylor_recursive(logstride, logblocksize, logtau, num_coeffs_low, poly);
   }
+}
+
+template<class word>
+void decompose_taylor_reverse_recursive(
+    unsigned int logstride,
+    unsigned int logblocksize,
+    unsigned int logtau,
+    uint64_t num_coeffs,
+    word* poly)
+{
+  uint64_t tau = 1uLL << logtau;
+  if(num_coeffs <= tau) return; // nothing to do
+  unsigned int logn = logblocksize;
+  while((1uLL << logn) >= (2 * num_coeffs)) logn--;
+  // we want 2**logn >= num_coeffs, 2**(logn-1) < num_coeffs
+  uint64_t n = 1uLL << logn;
+  uint64_t m = 1uLL << (logn - 1);
+  assert(n >= num_coeffs);
+  assert(m < num_coeffs);
+  uint64_t delta = 1uLL << (logn - 1 - logtau);
+  // the order of the additions below is chosen so that
+  // values are used before they are modified
+  const uint64_t num_coeffs_high = num_coeffs - m;
+  const uint64_t num_coeffs_low  = m;
+  if(num_coeffs_high > tau)
+  {
+    decompose_taylor_reverse_recursive(logstride, logblocksize, logtau, num_coeffs_high, poly + (m<<logstride));
+  }
+  if(num_coeffs_low  > tau)
+  {
+    decompose_taylor_reverse_recursive(logstride, logblocksize, logtau, num_coeffs_low, poly);
+  }
+  decompose_taylor_one_step_reverse<word>(logstride, num_coeffs, delta, n, poly);
 }
 
 template<class word>
@@ -276,90 +309,6 @@ void decompose_taylor_reverse(
             poly + (num_coeffs_rounded << logstride));
     }
   }
-}
-
-template<class word>
-int decompose_taylor_test()
-{
-  uint64_t logtau = 1;
-  unsigned int logstride = 1;
-  size_t max_sz = 1uLL << 10;
-  size_t min_sz = 0;
-  size_t large_sz = 1uLL << 24;
-  size_t array_sz = max(large_sz, max_sz << logstride);
-  word* test = new word[3 * array_sz];
-  unique_ptr<word[]> _1(test);
-  word* copy = test + array_sz;
-  word* ref  = test + 2*array_sz;
-
-  cout << endl << endl << "Test Taylor decomposition used in Mateer-Gao FFT" << endl;
-  int error = 0;
-  unsigned int logblocksize = 0;
-  for(size_t sz = min_sz; sz < max_sz; sz++)
-  {
-    while((1uL << logblocksize) < sz) logblocksize++;
-    memset(test, 0, (sz << logstride) * sizeof(word));
-    for(size_t i = 0; i < (sz << logstride); i++)
-    {
-      test[i] = urand();
-      copy[i] = test[i];
-      ref[i]  = test[i];
-    }
-
-    decompose_taylor_recursive(logstride, logblocksize, logtau, sz, test);
-    // compare output of decompose_taylor_iterative to output of decompose_taylor
-    decompose_taylor(logstride, logblocksize, logtau, sz, copy);
-    if(memcmp(test, copy, (sz << logstride) * sizeof(word))) error = 1;
-
-    if constexpr(true)
-    {
-      decompose_taylor_reverse(logstride, logblocksize, logtau, sz, test);
-    }
-    else
-    {
-      // this algorithm transforms back the output of decompose_taylor or
-      // decompose_taylor_iterative into its input (it is quadratic in sz/tau.)
-      // this way, the obtained input can be compared to the initial value.
-      uint64_t tau = 1uL << logtau;
-      for(size_t i = (sz + tau - 1)/tau; i > 0; i--)
-      {
-        for(size_t j = i * tau; j < sz; j++)
-        {
-          for(size_t s = 0; s < (1uL << logstride); s++)
-          {
-            size_t i1 = s + ((j - tau + 1) << logstride);
-            size_t i2 = s + (j << logstride);
-            assert(i1 < (sz << logstride));
-            assert(i2 < (sz << logstride));
-            test[i1] ^= test[i2];
-          }
-        }
-      }
-    }
-    if(memcmp(test, ref, (sz << logstride) * sizeof(word))) error = 1;
-  }
-
-  if(error == 0) cout << "Taylor decomposition succeeded" << endl;
-  else cout << "Taylor decomposition failed" << endl;
-
-  cout << "Taylor decomposition benchmark" << endl;
-  // process a large instance, for benchmarking purposes
-  while((1uL << logblocksize) < large_sz) logblocksize++;
-  for(size_t i = 0; i < large_sz; i++)
-  {
-    test[i] = urand();
-    copy[i] = test[i];
-  }
-  init_time();
-  double t1 = absolute_time();
-  decompose_taylor_recursive(0, logblocksize, logtau, large_sz, copy);
-  double t2 = absolute_time();
-  decompose_taylor(0, logblocksize, logtau, large_sz, test);
-  double t3 = absolute_time();
-  cout << "Iterative time: " << (t3-t2) << endl;
-  cout << "Recursive time: " << (t2-t1) << endl;
-  cout << "Taylor decomposition iterative / recursive speed ratio: " << (t3-t2)/(t2-t1) << endl;
-  return error ? 1 : 0;
 }
 
 // s = log log of block size (for recursion: initialized with field log-log size)
