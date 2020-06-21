@@ -1,5 +1,10 @@
 #pragma once
 
+#include <cstdint>
+#include <cassert>
+
+#include "decompose_taylor.h"
+#include "cantor.h"
 
 // s = log log of block size (for recursion: initialized with field log-log size)
 template <class word, int s>
@@ -453,7 +458,7 @@ void fft_mateer_truncated(cantor_basis<word>* c_b, word* poly, unsigned int logs
 {
   static_assert(s<=6);
   if(logsize > (1u << s)) logsize = 1 << s;
-#if 0
+#if 1
   fft_aux_ref_truncated<word, s>(c_b, poly, 0, 0, logsize);
 #else
   fft_aux_fast_truncated<word, s>(c_b, poly, 0, 0, 0, logsize);
@@ -468,7 +473,7 @@ void fft_mateer_truncated_reverse(cantor_basis<word>* c_b, word* poly, unsigned 
 {
   static_assert(s<=6);
   if(logsize > (1u << s)) logsize = 1 << s;
-#if 0
+#if 1
   fft_aux_ref_truncated_reverse<word,s>(c_b, poly, 0, 0, logsize);
 #else
   fft_aux_fast_truncated_reverse<word, s>(c_b, poly, 0, 0, 0, logsize);
