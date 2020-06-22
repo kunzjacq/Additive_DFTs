@@ -4,6 +4,8 @@
 
 #include <cassert>
 #include <cstring> // for memcpy/memset/memcmp
+//#include <emmintrin.h>
+#include <immintrin.h>
 
 #include "helpers.hpp"
 
@@ -22,6 +24,7 @@ cantor_basis_bare<word>::cantor_basis_bare():
   m_gamma_over_mult(new word[c_b_t<word>::n]),
   m_mult_to_gamma_table(new word[256*sizeof(word)]),
   m_gamma_to_mult_table(new word[256*sizeof(word)]),
+  m_mult_mul_table(nullptr),
   m_masks(new word[c_b_t<word>::word_logsize]),
   m_gamma_squares(new word[c_b_t<word>::n]),
   m_log_table_sizes(1 << min(c_b_t<word>::n, 16u)),
@@ -70,6 +73,8 @@ void cantor_basis_bare<word>::free_memory()
   m_gamma_over_mult = nullptr;
   delete[] m_mult_to_gamma_table;
   m_mult_to_gamma_table = nullptr;
+  delete[] m_mult_mul_table;
+  m_mult_mul_table = nullptr;
   delete[] m_gamma_to_mult_table;
   m_gamma_to_mult_table = nullptr;
 
@@ -182,10 +187,11 @@ void cantor_basis_bare<word>::build()
   word u = 1;
   m_mult_over_gamma[0] = 1;
   m_mult_over_gamma[1] = u << (n/2);
-  for(unsigned int i = 2 ; i < n;i++)
+  for(unsigned int i = 2 ; i < n; i++)
   {
     m_mult_over_gamma[i] = multiply(m_mult_over_gamma[i-1], m_mult_over_gamma[1]);
   }
+  word mult_generator_minimal_polynomial_gamma = multiply(m_mult_over_gamma[n-1], m_mult_over_gamma[1]);
 
   if(debug)
   {
@@ -197,11 +203,9 @@ void cantor_basis_bare<word>::build()
   // invert matrix of beta over gamma to obtain the expression of {gamma_i} in terms of {beta_j}
   begin_linalg = high_resolution_clock::now();
   for(size_t i = 0; i< c_b_t<word>::n; i++) m_A[i] = m_beta_over_gamma[i];
-  //memcpy(m_A, m_beta_over_gamma, n * sizeof(word));
   int res = invert_matrix(m_A, m_gamma_over_beta, 0);
 
   for(size_t i = 0; i< c_b_t<word>::n; i++) m_A[i] = m_mult_over_gamma[i];
-  //memcpy(m_A, m_mult_over_gamma, n * sizeof(word));
   res |= invert_matrix(m_A, m_gamma_over_mult, 0);
 
   end_linalg = high_resolution_clock::now();
@@ -219,16 +223,37 @@ void cantor_basis_bare<word>::build()
   {
     for(unsigned int b = 0; b < 256; b++)
     {
-      word res = 0;
+      word vec = 0;
       word w = static_cast<word>(b) << (8*byte_idx);
-      transpose_matrix_vector_product(m_beta_over_gamma, w, res);
-      m_beta_to_gamma_table[256*byte_idx + b] = res;
-      transpose_matrix_vector_product(m_gamma_over_beta, w, res);
-      m_gamma_to_beta_table[256*byte_idx + b] = res;
-      transpose_matrix_vector_product(m_mult_over_gamma, w, res);
-      m_mult_to_gamma_table[256*byte_idx + b] = res;
-      transpose_matrix_vector_product(m_gamma_over_mult, w, res);
-      m_gamma_to_mult_table[256*byte_idx + b] = res;
+      transpose_matrix_vector_product(m_beta_over_gamma, w, vec);
+      m_beta_to_gamma_table[256*byte_idx + b] = vec;
+      transpose_matrix_vector_product(m_gamma_over_beta, w, vec);
+      m_gamma_to_beta_table[256*byte_idx + b] = vec;
+      transpose_matrix_vector_product(m_mult_over_gamma, w, vec);
+      m_mult_to_gamma_table[256*byte_idx + b] = vec;
+      transpose_matrix_vector_product(m_gamma_over_mult, w, vec);
+      m_gamma_to_mult_table[256*byte_idx + b] = vec;
+    }
+  }
+
+  mult_generator_minimal_polynomial = gamma_to_mult(mult_generator_minimal_polynomial_gamma);
+
+  if constexpr(c_b_t<word>::n == 32 || c_b_t<word>::n == 64)
+{
+    m_mult_mul_table = new word[(1uLL<<mult_mul_table_logsize)*c_b_t<word>::n/mult_mul_table_logsize];
+    for(unsigned int sub_idx = 0; sub_idx < c_b_t<word>::n/mult_mul_table_logsize; sub_idx++)
+    {
+      unsigned int k = (1uLL << mult_mul_table_logsize);
+      for(word w = 0; w < k; w++)
+      {
+        m_mult_mul_table[sub_idx * k + w] =
+            gamma_to_mult(
+              multiply(
+                mult_generator_minimal_polynomial_gamma,
+                mult_to_gamma(w<<(sub_idx*mult_mul_table_logsize))
+                )
+              );
+      }
     }
   }
 
@@ -558,8 +583,65 @@ word cantor_basis_bare<word>::multiply_safe(const word &a, const word &b) const
 }
 
 template<class word>
-word cantor_basis_bare<word>::square_safe(const word &a) const {
+word cantor_basis_bare<word>::square_safe(const word &a) const
+{
   return square(a);
+}
+
+template<class word>
+word cantor_basis_bare<word>::multiply_mult_repr_ref(const word &a, const word &b) const
+{
+  word a_gamma = mult_to_gamma(a);
+  word b_gamma = mult_to_gamma(b);
+  return gamma_to_mult(multiply(a_gamma, b_gamma));
+}
+
+template<class word>
+word cantor_basis_bare<word>::multiply_mult_repr(const word &a, const word &b) const
+{
+  if constexpr(c_b_t<word>::n == 32)
+  {
+    __m128i aa = _mm_set1_epi64x(a);
+    __m128i bb = _mm_set1_epi64x(b);
+    __m128i cc = _mm_clmulepi64_si128(aa,bb, 0);
+    uint64_t c = _mm_cvtsi128_si64(cc); // lower 64 bits
+    uint32_t ab_high = c>>32;
+    uint32_t ab_low = c;
+    uint32_t* t = m_mult_mul_table;
+    constexpr uint32_t mask = (1uLL << mult_mul_table_logsize) - 1;
+    uint32_t m = t[ab_high&mask];
+    for(unsigned int i = 0; i < c_b_t<uint32_t>::n/mult_mul_table_logsize - 1; i++)
+    {
+      t+= 1uLL << mult_mul_table_logsize;
+      ab_high >>= mult_mul_table_logsize;
+      m ^= t[ab_high&mask];
+    }
+    return ab_low^m;
+  }
+  else if constexpr(c_b_t<word>::n == 64)
+  {
+    __m128i aa = _mm_set1_epi64x(a);
+    __m128i bb = _mm_set1_epi64x(b);
+    __m128i cc = _mm_clmulepi64_si128(aa,bb, 0);
+
+    uint64_t ab_low = _mm_cvtsi128_si64(cc);     // lower 64 bits
+    uint64_t ab_high = _mm_extract_epi64(cc, 1); // upper 64 bits
+    uint64_t* t = m_mult_mul_table;
+    constexpr uint64_t mask = (1uLL << mult_mul_table_logsize) - 1;
+    uint64_t m = t[ab_high&mask];
+    for(unsigned int i = 0; i < c_b_t<uint64_t>::n/mult_mul_table_logsize - 1; i++)
+    {
+      t+= 1uLL << mult_mul_table_logsize;
+      ab_high >>= mult_mul_table_logsize;
+      m ^= t[ab_high&mask];
+    }
+    return ab_low^m;
+  }
+  else
+  {
+    return multiply_mult_repr_ref(a, b);
+  }
+  
 }
 
 #ifdef HAS_UINT2048

@@ -222,6 +222,8 @@ public:
  * to reduce memory usage.
  */
 
+constexpr unsigned int mult_mul_table_logsize=16;
+
 template<class word>
 class cantor_basis_bare
 {
@@ -238,6 +240,10 @@ private:
   word* m_gamma_over_mult;
   word* m_mult_to_gamma_table;
   word* m_gamma_to_mult_table;
+
+  word* m_mult_mul_table;
+
+  word mult_generator_minimal_polynomial;
 
   word* m_masks;
   word* m_gamma_squares;
@@ -284,6 +290,9 @@ public:
   word trace(const word& w) const;
   word gamma_square(unsigned int i) const { return m_gamma_squares[i]; }
   word multiply_beta_repr_ref(const word &a, const word &b) const;
+
+  word multiply_mult_repr_ref(const word &a, const word &b) const;
+  word multiply_mult_repr(const word &a, const word &b) const;
 
   int error() const;
   time_measurements times(){return m_t;}

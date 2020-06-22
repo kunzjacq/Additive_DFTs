@@ -637,7 +637,7 @@ bool mateer_gao_product_test(
             (unsigned long *) p3, (unsigned long *) p1, sz/(16*sizeof(unsigned long)),
             (unsigned long *) p2, sz/(16*sizeof(unsigned long)));
       // multiply polynomials with additive fft, put result in p4
-      binary_polynomial_multiply<word>( &c, p1, p2, p4, buffer1, buffer2, sz/2 - 1, sz/2 - 1, dft_logsize);
+      binary_polynomial_multiply_alt<word>( &c, p1, p2, p4, buffer1, buffer2, sz/2 - 1, sz/2 - 1, dft_logsize);
       // compare results
       local_error = compare_results < uint8_t > (p3, p4, sz/8);
       error |= local_error;
@@ -664,7 +664,7 @@ bool mateer_gao_product_test(
       i = 0;
       do
       {
-        binary_polynomial_multiply<word>(&c, p1, p2, p4, buffer1, buffer2, sz/2 - 1, sz/2 - 1, dft_logsize);
+        binary_polynomial_multiply_alt<word>(&c, p1, p2, p4, buffer1, buffer2, sz/2 - 1, sz/2 - 1, dft_logsize);
         i++;
       }
       while(absolute_time() <= t2 + 1);

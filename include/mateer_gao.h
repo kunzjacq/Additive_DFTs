@@ -113,6 +113,58 @@ void fft_aux_ref_truncated(
 }
 
 template <class word, int s>
+void fft_aux_ref_truncated_mult(
+    cantor_basis<word>* c_b,
+    word* poly,
+    word j, // block index to process
+    unsigned int logstride,
+    unsigned int logsize)
+// log2 size of each stride to be processed;
+// should be <= 2**s, the input is assumed to be of size 2**logsize and only the 2**logsize first output values are computed
+{
+  if constexpr(s == 0)
+  {
+    const uint64_t stride = 1uL << logstride;
+    const word val = c_b->gamma_to_mult(c_b->beta_to_gamma(j << 1));
+    for(uint64_t i = 0; i < stride; i++)
+    {
+      // computes (u,v) where
+      // u = f_0 + f1 * w_{2.j},
+      // v = f_0 + f1 * w_{2.j+1} = f_0 + f1 *(w_{2.j} + 1) = u + f_1
+      // f_0 = poly[i], f_1 = poly[i + stride]
+      poly[i]          ^= c_b->multiply_mult_repr(poly[i + stride], val);
+      poly[i + stride] ^= poly[i];
+    }
+  }
+  else
+  {
+    const unsigned int t = 1 << (s - 1);
+    if(logsize <= t)
+    {
+      fft_aux_ref_truncated_mult<word, s - 1>(c_b, poly, j << t, logstride, logsize);
+    }
+    else
+    {
+      const uint64_t tau   = 1uL <<  (logsize - t);
+      const uint64_t eta   = 1uL << logsize;
+      // on input: there are 2**'logstride' interleaved series of size 'eta' = 2**(2*logsize-t);
+      decompose_taylor_iterative_alt(logstride, 2 * t, t, eta, poly);
+      // fft on columns
+      // if logsize >= t, each fft should process 2**(logsize - t) values
+      // i.e. logsize' = logsize - t
+      fft_aux_ref_truncated_mult<word, s - 1>(c_b, poly, j, logstride + t, logsize - t);
+      const uint64_t row_size = 1uL << (t + logstride);
+      for(uint64_t i = 0; i < tau; i++)
+      {
+        word j_loop = (j << t) | i;
+        fft_aux_ref_truncated_mult<word, s - 1>(c_b, poly, j_loop, logstride, t);
+        poly += row_size;
+      }
+    }
+  }
+}
+
+template <class word, int s>
 void fft_aux_ref_truncated_reverse(
     cantor_basis<word>* c_b,
     word* poly,
@@ -157,6 +209,53 @@ void fft_aux_ref_truncated_reverse(
     }
   }
 }
+
+template <class word, int s>
+void fft_aux_ref_truncated_reverse_mult(
+    cantor_basis<word>* c_b,
+    word* poly,
+    word j, // block index to process
+    unsigned int logstride,
+    unsigned int logsize)
+// log2 size of each stride to be processed;
+// should be <= 2**s, the input is assumed to be of size 2**logsize and only the 2**logsize first output values are computed
+{
+  if constexpr(s == 0)
+  {
+    const uint64_t stride = 1uL << logstride;
+    const word val = c_b->gamma_to_mult(c_b->beta_to_gamma(j << 1));
+    for(uint64_t i = 0; i < stride; i++)
+    {
+      poly[i + stride] ^= poly[i];
+      poly[i]          ^= c_b->multiply_mult_repr(poly[i + stride], val);
+    }
+  }
+  else
+  {
+    constexpr unsigned int t = 1 << (s - 1);
+    if(logsize <= t)
+    {
+      fft_aux_ref_truncated_reverse_mult<word, s - 1>(c_b, poly, j << t, logstride, logsize);
+    }
+    else
+    {
+      const uint64_t tau   = 1uL <<  (logsize - t);
+      const uint64_t eta   = 1uL << logsize;
+      const uint64_t row_size = 1uL << (t + logstride);
+      word* poly_loc = poly;
+      for(uint64_t i = 0; i < tau; i++)
+      {
+        word j_loop = (j << t) | i;
+        fft_aux_ref_truncated_reverse_mult<word, s - 1>(c_b, poly_loc, j_loop, logstride, t);
+        poly_loc += row_size;
+      }
+      // reverse fft on columns
+      fft_aux_ref_truncated_reverse_mult<word, s - 1>(c_b, poly, j, logstride + t, logsize - t);
+      decompose_taylor_reverse_iterative_alt(logstride, 2 * t, t, eta, poly);
+    }
+  }
+}
+
 
 template <class word, int s>
 void fft_aux_fast(
@@ -465,6 +564,14 @@ void fft_mateer_truncated(cantor_basis<word>* c_b, word* poly, unsigned int logs
 #endif
 }
 
+template <class word, int s>
+void fft_mateer_truncated_mult(cantor_basis<word>* c_b, word* poly, unsigned int logsize)
+{
+  static_assert(s<=6);
+  if(logsize > (1u << s)) logsize = 1 << s;
+  fft_aux_ref_truncated_mult<word, s>(c_b, poly, 0, 0, logsize);
+}
+
 /* Reverse function of fft_mateer_truncated.
  *
  */
@@ -480,3 +587,10 @@ void fft_mateer_truncated_reverse(cantor_basis<word>* c_b, word* poly, unsigned 
 #endif
 }
 
+template <class word, int s>
+void fft_mateer_truncated_reverse_mult(cantor_basis<word>* c_b, word* poly, unsigned int logsize)
+{
+  static_assert(s<=6);
+  if(logsize > (1u << s)) logsize = 1 << s;
+  fft_aux_ref_truncated_reverse_mult<word,s>(c_b, poly, 0, 0, logsize);
+}

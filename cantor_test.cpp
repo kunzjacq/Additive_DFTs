@@ -126,6 +126,8 @@ int main()
     full_test<uint16_t>();
     cout << "Testing f[2**32]" << endl;
     full_test<uint32_t>();
+    cout << "Testing f[2**64]" << endl;
+    full_test<uint64_t>();
 #ifdef HAS_UINT2048
     cout << "Testing f[2**2048]" << endl;
     full_test<uint2048_t>();
@@ -352,6 +354,22 @@ double test(cantor_basis<word>* c_b, word* values)
     wres <<= 1;
   }
   cout << "beta relation errors: " << errors << endl;
+
+  if constexpr(c_b_t<word>::n ==32 || c_b_t<word>::n == 64)
+  {
+    errors = 0;
+    for(size_t i = 0; i < n_vals - 1; i++)
+    {
+      word a = values[i];
+      word b = values[i+1];
+      word am = c_b->gamma_to_mult(a);
+      word bm = c_b->gamma_to_mult(b);
+      word pr = c_b->multiply_mult_repr(am, bm);
+      if(c_b->mult_to_gamma(pr) != c_b->multiply(a, b)) errors++;
+      if(pr != c_b->multiply_mult_repr_ref(am,bm)) errors++;
+    }
+    cout << "mult representation errors: " << errors << endl;
+  }
 
   int repeat = 1024 / c_b_t<word>::n + 1;
   word sum_2 = 0, sum3 = 0;

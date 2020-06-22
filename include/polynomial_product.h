@@ -40,6 +40,25 @@ void binary_polynomial_to_words(cantor_basis<word>* c_b, uint8_t* p, word* res, 
   for(; j < fft_size;j++) res[j] = 0;
 }
 
+template <class word>
+void binary_polynomial_to_words_alt(uint8_t* p, word* res, size_t d, size_t fft_size)
+{
+  constexpr unsigned int bytes_per_word = c_b_t<word>::n >> 4;
+  size_t j = 0, k = 0;
+  for(size_t i = 0; i < d / 8 + 1; i++)
+  {
+    if(k == 0) res[j]  = static_cast<word>(p[i]);
+    else       res[j] |= static_cast<word>(p[i]) << (8 * k);
+    k++;
+    if(k == bytes_per_word)
+    {
+      j++;
+      k = 0;
+    }
+  }
+  for(; j < fft_size;j++) res[j] = 0;
+}
+
 template<>
 void binary_polynomial_to_words(cantor_basis<uint8_t>* c_b, uint8_t* p, uint8_t* res, size_t d, size_t fft_size)
 {
@@ -65,6 +84,34 @@ void words_to_binary_polynomial(cantor_basis<word>* c_b, word* buf, uint8_t* p, 
   {
     buf[i] = c_b->gamma_to_mult(buf[i]);
   }
+  word up = 0;
+  for(size_t i = 0; i < bound; i++)
+  {
+    word w = buf[i];
+    word low = (w & low_mask) ^ up;
+    up  = w >> bits_per_word;
+    for(unsigned int j = 0; j < bytes_per_word; j++)
+    {
+      p[i    * bytes_per_word + j] = (low >> (8*j)) & 0xFF;
+    }
+  }
+
+  for(unsigned int j = 0; j < d / 8 + 1 - bound * bytes_per_word; j++)
+  {
+    p[ bound * bytes_per_word + j] = (up  >> (8*j)) & 0xFF;
+  }
+  for(size_t i = d / 8 + 1; i < fft_size; i++) p[i] = 0;
+}
+
+
+template <class word>
+void words_to_binary_polynomial_alt(word* buf, uint8_t* p, size_t d, size_t fft_size)
+{
+  constexpr unsigned int bytes_per_word = c_b_t<word>::n >> 4;
+  constexpr unsigned int bits_per_word  = c_b_t<word>::n >> 1;
+  constexpr word u = 1;
+  constexpr word low_mask = (u << bits_per_word) - 1;
+  size_t bound = d / bits_per_word + 1;
   word up = 0;
   for(size_t i = 0; i < bound; i++)
   {
@@ -152,4 +199,28 @@ void binary_polynomial_multiply(
   fft_mateer_truncated_reverse<word,s>(c_b, b1, logsize);
 
   words_to_binary_polynomial(c_b, b1, result, d1 + d2, sz);
+}
+
+template <class word>
+void binary_polynomial_multiply_alt(
+    cantor_basis<word>* c_b,
+    uint8_t* p1, uint8_t* p2, uint8_t* result, word* b1, word* b2,
+    size_t d1, size_t d2, unsigned int logsize)
+{
+  constexpr unsigned int s = c_b_t<word>::word_logsize;
+  // max number of words to store result:
+  // = (d1 + d2 + 1 + bits_per_word - 1) / bits_per_word = (d1 + d2) / bits_per_word + 1;
+#ifndef NDEBUG
+  constexpr unsigned int bits_per_word  = c_b_t<word>::n >> 1;
+  const size_t bound = (d1+d2) / bits_per_word + 1;
+#endif
+  const size_t sz = (1uL << logsize);
+
+  binary_polynomial_to_words_alt(p1, b1, d1, sz);
+  binary_polynomial_to_words_alt(p2, b2, d2, sz);
+  fft_mateer_truncated_mult<word,s>(c_b, b1, logsize);
+  fft_mateer_truncated_mult<word,s>(c_b, b2, logsize);
+  for(size_t i = 0; i < sz; i++) b1[i] = c_b->multiply_mult_repr(b1[i], b2[i]);
+  fft_mateer_truncated_reverse_mult<word,s>(c_b, b1, logsize);
+  words_to_binary_polynomial_alt(b1, result, d1 + d2, sz);
 }
