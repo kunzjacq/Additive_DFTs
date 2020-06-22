@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cassert>
+#include <algorithm>
 
 using namespace std;
 
@@ -224,12 +225,33 @@ void decompose_taylor_iterative_alt(
     assert(right_bound > left_bound + tau);
     if(previous_move == 2)
     {
+#if 0
       // decompose
       uint64_t local_logn = logn - depth;
       uint64_t local_num_coeffs = right_bound - left_bound;
       if(is_full_lowest_depth == -1) while((1uLL << local_logn) >= (2 * local_num_coeffs)) local_logn--;
       uint64_t local_delta = 1uLL << (local_logn - 1 - logtau); // 2**delta = m/tau
       decompose_taylor_one_step(logstride, local_num_coeffs, local_delta, 1uLL<<local_logn, poly+(left_bound<<logstride));
+#else
+      // inline and simplified
+      uint64_t local_logn = logn - depth + logstride;
+      uint64_t local_num_coeffs = (right_bound - left_bound) << logstride;
+      if(is_full_lowest_depth == -1) while((1uLL << local_logn) >= (2 * local_num_coeffs)) local_logn--;
+      uint64_t local_delta = 1uLL << (local_logn - 1 - logtau); // 2**delta = m/tau
+      const uint64_t delta_s      = local_delta;
+      const uint64_t n_s          = 1uLL             << local_logn;
+      const uint64_t num_coeffs_s = local_num_coeffs;
+      const uint64_t m_s          = n_s >> 1;
+      word* local_poly = poly + (left_bound << logstride);
+      word* p1 = local_poly + delta_s;
+      word* p2 = local_poly + (n_s - delta_s);
+      word* p3 = local_poly + m_s;
+      const size_t num_iter_a = max(n_s - delta_s, num_coeffs_s) - (n_s - delta_s);
+      const size_t num_iter_b = min(num_coeffs_s - m_s, m_s - delta_s);
+      for(uint64_t i = 0; i < num_iter_a; i++) p1[i] ^= p2[i];
+      for(uint64_t i = 0; i < num_iter_b; i++) p1[i] ^= p3[i];
+      for(uint64_t i = 0; i < num_iter_a; i++) p3[i] ^= p2[i];
+#endif
 
       //then descend in the left subtree if we are not already at a leaf
       // we check only the leaf criterion on the left subtree, since if that one is empty, so is the
@@ -406,12 +428,26 @@ void decompose_taylor_reverse_iterative_alt(
 
     if(go_back_up)
     {
+#if 0
       // recompose the initial polynomial
       uint64_t local_logn = logn - depth;
       uint64_t local_num_coeffs = right_bound - left_bound;
       if(is_full_lowest_depth == -1) while((1uLL << local_logn) >= (2 * local_num_coeffs)) local_logn--;
       uint64_t local_delta = 1uLL << (local_logn - 1 - logtau); // 2**delta = m/tau
       decompose_taylor_one_step_reverse(logstride, local_num_coeffs, local_delta, 1uLL<<local_logn, poly+(left_bound<<logstride));
+#else
+      uint64_t local_logn = logn - depth + logstride;
+      uint64_t local_num_coeffs = (right_bound - left_bound) << logstride;
+      if(is_full_lowest_depth == -1) while((1uLL << local_logn) >= (2 * local_num_coeffs)) local_logn--;
+      uint64_t local_delta = 1uLL << (local_logn - 1 - logtau); // 2**delta = m/tau
+
+      const uint64_t delta_s      = local_delta;
+      const uint64_t m_s          = 1uLL << (local_logn - 1);
+      const uint64_t num_coeffs_s = local_num_coeffs;
+      word* local_poly = poly + (left_bound<<logstride);
+      word* p2 = local_poly -m_s + delta_s;
+      for(uint64_t i = m_s; i < num_coeffs_s; i++) p2[i] ^= local_poly[i];
+#endif
 
       if(depth == 0) break;
       previous_move = current_position & 1;
