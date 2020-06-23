@@ -25,6 +25,7 @@ cantor_basis_bare<word>::cantor_basis_bare():
   m_mult_to_gamma_table(new word[256*sizeof(word)]),
   m_gamma_to_mult_table(new word[256*sizeof(word)]),
   m_mult_mul_table(nullptr),
+  m_beta_to_mult_table(new word[256*sizeof(word)]),
   m_masks(new word[c_b_t<word>::word_logsize]),
   m_gamma_squares(new word[c_b_t<word>::n]),
   m_log_table_sizes(1 << min(c_b_t<word>::n, 16u)),
@@ -73,6 +74,8 @@ void cantor_basis_bare<word>::free_memory()
   m_gamma_over_mult = nullptr;
   delete[] m_mult_to_gamma_table;
   m_mult_to_gamma_table = nullptr;
+  delete[] m_beta_to_mult_table;
+  m_beta_to_mult_table = nullptr;
   delete[] m_mult_mul_table;
   m_mult_mul_table = nullptr;
   delete[] m_gamma_to_mult_table;
@@ -257,6 +260,15 @@ void cantor_basis_bare<word>::build()
     }
   }
 
+  for(unsigned int byte_idx = 0; byte_idx < sizeof(word); byte_idx++)
+  {
+    for(unsigned int b = 0; b < 256; b++)
+    {
+      word w = static_cast<word>(b) << (8*byte_idx);
+      m_beta_to_mult_table[256*byte_idx + b] = gamma_to_mult(beta_to_gamma(w));
+    }
+  }
+
   if(debug)
   {
     if(!matrix_product_is_identity(m_gamma_over_beta, m_beta_over_gamma))
@@ -312,6 +324,20 @@ word cantor_basis_bare<word>::gamma_to_beta(const word& w) const
 }
 
 template<class word>
+word cantor_basis_bare<word>::beta_to_mult(const word& w) const
+{
+  word res = 0;
+  word wp = w;
+  for(unsigned int byte_idx = 0; byte_idx < sizeof(word); byte_idx++)
+  {
+    unsigned int bp = static_cast<unsigned int>(wp & 0xFF);
+    if(bp) res ^= m_beta_to_mult_table[256*byte_idx + bp];
+    wp >>= 8;
+  }
+  return res;
+}
+
+template<class word>
 word cantor_basis_bare<word>::beta_to_gamma(const word& w, unsigned int num_bytes) const
 {
   word res = 0;
@@ -322,7 +348,8 @@ word cantor_basis_bare<word>::beta_to_gamma(const word& w, unsigned int num_byte
   unsigned int nb = num_bytes ? num_bytes : sizeof(word);
   for(unsigned int byte_idx = 0; byte_idx < nb; byte_idx++)
   {
-    res ^= m_beta_to_gamma_table[256*byte_idx + static_cast<unsigned int>(wp & 0xFF)];
+    unsigned int bp = static_cast<unsigned int>(wp & 0xFF);
+    if(bp) res ^= m_beta_to_gamma_table[256*byte_idx + bp];
     wp >>= 8;
   }
 #endif
@@ -339,7 +366,8 @@ word cantor_basis_bare<word>::gamma_to_mult(const word& w) const
   word wp = w;
   for(unsigned int byte_idx = 0; byte_idx < sizeof(word); byte_idx++)
   {
-    res ^= m_gamma_to_mult_table[256*byte_idx + static_cast<unsigned int>(wp & 0xFF)];
+    unsigned int bp = static_cast<unsigned int>(wp & 0xFF);
+    if(bp) res ^= m_gamma_to_mult_table[256*byte_idx + bp];
     wp >>= 8;
   }
 #endif
@@ -597,16 +625,16 @@ word cantor_basis_bare<word>::multiply_mult_repr_ref(const word &a, const word &
 }
 
 template<class word>
-word cantor_basis_bare<word>::multiply_mult_repr(const word &a, const word &b) const
+inline word cantor_basis_bare<word>::multiply_mult_repr(const word &a, const word &b) const
 {
   if constexpr(c_b_t<word>::n == 32)
   {
     __m128i aa = _mm_set1_epi64x(a);
     __m128i bb = _mm_set1_epi64x(b);
-    __m128i cc = _mm_clmulepi64_si128(aa,bb, 0);
+    __m128i cc = _mm_clmulepi64_si128(aa, bb, 0);
     uint64_t c = _mm_cvtsi128_si64(cc); // lower 64 bits
-    uint32_t ab_high = c>>32;
-    uint32_t ab_low = c;
+    uint32_t ab_high = c >> 32;
+    uint32_t ab_low  = (uint32_t) c;
     uint32_t* t = m_mult_mul_table;
     constexpr uint32_t mask = (1uLL << mult_mul_table_logsize) - 1;
     uint32_t m = t[ab_high&mask];
@@ -641,7 +669,6 @@ word cantor_basis_bare<word>::multiply_mult_repr(const word &a, const word &b) c
   {
     return multiply_mult_repr_ref(a, b);
   }
-  
 }
 
 #ifdef HAS_UINT2048

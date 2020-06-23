@@ -242,6 +242,7 @@ private:
   word* m_gamma_to_mult_table;
 
   word* m_mult_mul_table;
+  word* m_beta_to_mult_table;
 
   word mult_generator_minimal_polynomial;
 
@@ -278,6 +279,7 @@ public:
 
   word beta_over_gamma(unsigned int i) const;
   word gamma_to_beta(const word& w) const;
+  word beta_to_mult(const word& w) const;
   word gamma_over_beta(unsigned int i) const;
   word beta_to_gamma(const word& w, unsigned int num_bytes = 0) const;
 

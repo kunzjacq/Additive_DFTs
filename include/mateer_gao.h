@@ -125,7 +125,7 @@ void fft_aux_ref_truncated_mult(
   if constexpr(s == 0)
   {
     const uint64_t stride = 1uL << logstride;
-    const word val = c_b->gamma_to_mult(c_b->beta_to_gamma(j << 1));
+    const word val = c_b->beta_to_mult(j << 1);
     for(uint64_t i = 0; i < stride; i++)
     {
       // computes (u,v) where
@@ -223,7 +223,7 @@ void fft_aux_ref_truncated_reverse_mult(
   if constexpr(s == 0)
   {
     const uint64_t stride = 1uL << logstride;
-    const word val = c_b->gamma_to_mult(c_b->beta_to_gamma(j << 1));
+    const word val = c_b->beta_to_mult(j << 1);
     for(uint64_t i = 0; i < stride; i++)
     {
       poly[i + stride] ^= poly[i];
