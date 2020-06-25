@@ -4,11 +4,9 @@
 
 #include <cassert>
 #include <cstring> // for memcpy/memset/memcmp
-//#include <emmintrin.h>
 #include <immintrin.h>
 
 #include "helpers.hpp"
-
 #include "cantor.h"
 
 static int depth = 0;
@@ -44,8 +42,6 @@ cantor_basis_bare<word>::cantor_basis_bare():
     m_beta_over_gamma[i] = 0;
     m_gamma_over_beta[i] = 0;
   }
-  //memset(m_beta_over_gamma, 0, c_b_t<word>::n * sizeof(word));
-  //memset(m_gamma_over_beta, 0, c_b_t<word>::n * sizeof(word));
   build();
   if(m_error) free_memory();
 }
@@ -324,11 +320,12 @@ word cantor_basis_bare<word>::gamma_to_beta(const word& w) const
 }
 
 template<class word>
-word cantor_basis_bare<word>::beta_to_mult(const word& w) const
+word cantor_basis_bare<word>::beta_to_mult(const word& w, unsigned int num_bytes) const
 {
   word res = 0;
   word wp = w;
-  for(unsigned int byte_idx = 0; byte_idx < sizeof(word); byte_idx++)
+  unsigned int nb = num_bytes ? num_bytes : sizeof(word);
+  for(unsigned int byte_idx = 0; byte_idx < nb; byte_idx++)
   {
     unsigned int bp = static_cast<unsigned int>(wp & 0xFF);
     if(bp) res ^= m_beta_to_mult_table[256*byte_idx + bp];
@@ -397,6 +394,13 @@ template<int byte_idx>
 word cantor_basis_bare<word>::beta_to_gamma_byte(uint32_t v) const
 {
   return m_beta_to_gamma_table[256*byte_idx + v];
+}
+
+template<class word>
+template<int byte_idx>
+word cantor_basis_bare<word>::beta_to_mult_byte(uint32_t v) const
+{
+  return m_beta_to_mult_table[256*byte_idx + v];
 }
 
 template<class word>
@@ -718,22 +722,18 @@ template uint128_t cantor_basis_bare<uint128_t>::beta_to_gamma_byte<1>(uint32_t 
 
 template class cantor_basis_bare<uint64_t>;
 template class cantor_basis<uint64_t>;
-const unsigned int c_b_t<uint64_t>::word_logsize;
-const unsigned int c_b_t<uint64_t>::n;
 template uint64_t cantor_basis_bare<uint64_t>::beta_to_gamma_byte<0>(uint32_t v) const;
 template uint64_t cantor_basis_bare<uint64_t>::beta_to_gamma_byte<1>(uint32_t v) const;
+template uint64_t cantor_basis_bare<uint64_t>::beta_to_mult_byte<0>(uint32_t v) const;
+template uint64_t cantor_basis_bare<uint64_t>::beta_to_mult_byte<1>(uint32_t v) const;
 
 template class cantor_basis_bare<uint32_t>;
 template class cantor_basis<uint32_t>;
-const unsigned int c_b_t<uint32_t>::word_logsize;
-const unsigned int c_b_t<uint32_t>::n;
 template uint32_t cantor_basis_bare<uint32_t>::beta_to_gamma_byte<0>(uint32_t v) const;
 template uint32_t cantor_basis_bare<uint32_t>::beta_to_gamma_byte<1>(uint32_t v) const;
+template uint32_t cantor_basis_bare<uint32_t>::beta_to_mult_byte<0>(uint32_t v) const;
+template uint32_t cantor_basis_bare<uint32_t>::beta_to_mult_byte<1>(uint32_t v) const;
 
 template class cantor_basis<uint16_t>;
-const unsigned int c_b_t<uint16_t>::word_logsize;
-const unsigned int c_b_t<uint16_t>::n;
 
 template class cantor_basis<uint8_t>;
-const unsigned int c_b_t<uint8_t>::word_logsize;
-const unsigned int c_b_t<uint8_t>::n;

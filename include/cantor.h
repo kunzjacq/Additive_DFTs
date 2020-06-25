@@ -279,7 +279,7 @@ public:
 
   word beta_over_gamma(unsigned int i) const;
   word gamma_to_beta(const word& w) const;
-  word beta_to_mult(const word& w) const;
+  word beta_to_mult(const word& w, unsigned int num_bytes = 0) const;
   word gamma_over_beta(unsigned int i) const;
   word beta_to_gamma(const word& w, unsigned int num_bytes = 0) const;
 
@@ -289,6 +289,7 @@ public:
   word mult_to_gamma(const word& w, unsigned int num_bytes = 0) const;
 
   template<int> word beta_to_gamma_byte(uint32_t v) const;
+  template<int> word beta_to_mult_byte(uint32_t v) const;
   word trace(const word& w) const;
   word gamma_square(unsigned int i) const { return m_gamma_squares[i]; }
   word multiply_beta_repr_ref(const word &a, const word &b) const;

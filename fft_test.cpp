@@ -61,6 +61,15 @@ static bool reverse_truncated_mateer_gao_dft_test(
     bool has_truncated_times,
     bool check_correctness,
     bool benchmark);
+static bool reverse_truncated_mateer_gao_mult_repr_dft_test(
+    word* p_buffers,
+    cantor_basis<word>& c,
+    unsigned int* log_sz,
+    unsigned int num_sz,
+    double* truncated_times,
+    bool has_truncated_times,
+    bool check_correctness,
+    bool benchmark);
 static bool mateer_gao_product_test(
     word* p_buffers,
     cantor_basis<word>& c,
@@ -113,6 +122,12 @@ int main(int UNUSED(argc), char** UNUSED(argv))
   if constexpr(true)
   {
     mateer_gao_error |= reverse_truncated_mateer_gao_dft_test(
+          buffers, c, log_sz, num_sz, truncated_times, has_truncated_times,
+          check_correctness, benchmark);
+  }
+  if constexpr(true)
+  {
+    mateer_gao_error |= reverse_truncated_mateer_gao_mult_repr_dft_test(
           buffers, c, log_sz, num_sz, truncated_times, has_truncated_times,
           check_correctness, benchmark);
   }
@@ -474,6 +489,62 @@ bool truncated_mateer_gao_dft_test(
       truncated_times[j] = t2; // for later comparison with reverse truncated Mateer-Gao
       cout << "time of truncated Mateer-Gao DFT:  " <<  truncated_times[j] << " sec." << endl;
       cout << "MG/regular additive DFT speed ratio : " << t1 / t2 << endl;
+
+      cout << endl << "Benchmarking truncated Mateer-Gao variants" << endl;
+      t1 = absolute_time();
+      i = 0;
+      do
+      {
+        memcpy(buffer1, refIn, sz * sizeof(word));
+        fft_mateer_truncated<word, c_b_t<word>::word_logsize>(&c, buffer1, lsz);
+        i++;
+      }
+      while(absolute_time() <= t1 + 1);
+      t1 = (absolute_time() - t1) / i;
+      cout << "time of truncated regular MG DFT:  " << t1 << " sec." << endl;
+      t2 = absolute_time();
+      i = 0;
+      do
+      {
+        memcpy(buffer1, refIn, sz * sizeof(word));
+        fft_mateer_truncated_fast<word, c_b_t<word>::word_logsize>(&c, buffer1, lsz);
+        i++;
+      }
+      while(absolute_time() <= t2 + 1);
+      t2 = (absolute_time() - t2) / i;
+      cout << "time of truncated fast MG DFT:  " << t2 << " sec." << endl;
+
+      double t3 = absolute_time();
+      i = 0;
+      do
+      {
+        memcpy(buffer1, refIn, sz * sizeof(word));
+        fft_mateer_truncated_reverse_mult<word, c_b_t<word>::word_logsize>(&c, buffer1, lsz);
+        i++;
+      }
+      while(absolute_time() <= t3 + 1);
+      t3 = (absolute_time() - t3) / i;
+
+      cout << "time of truncated mult MG DFT:  " << t3 << " sec." << endl;
+
+      double t4 = absolute_time();
+      i = 0;
+      do
+      {
+        memcpy(buffer1, refIn, sz * sizeof(word));
+        fft_mateer_truncated_reverse_mult_fast<word, c_b_t<word>::word_logsize>(&c, buffer1, lsz);
+        i++;
+      }
+      while(absolute_time() <= t4 + 1);
+      t4 = (absolute_time() - t4) / i;
+
+      cout << "time of truncated mult fast MG DFT:  " << t4 << " sec." << endl;
+
+      cout << "fast MG / regular MG speed ratio : " << t1 / t2 << endl;
+      cout << "regular mult MG / regular MG speed ratio : " << t1 / t3 << endl;
+      cout << "fast mult MG / regular mult MG speed ratio : " << t3 / t4 << endl;
+
+
     }
   }
   return error;
@@ -533,7 +604,7 @@ bool reverse_truncated_mateer_gao_dft_test(
       for( i = 0; i < check_sz; i++) refOut[i] = buffer1[i];
       if(verbose) cout << "Applying reverse truncated Mateer-Gao DFT..." << endl;
       memcpy(buffer1, refIn, sz * sizeof(word));
-      fft_mateer_truncated_reverse<word,s>(&c, buffer1, lsz);
+      fft_mateer_truncated_reverse_fast<word,s>(&c, buffer1, lsz);
 
       local_error = compare_results < word > (buffer1, refOut, check_sz);
       error |= local_error;
@@ -565,9 +636,133 @@ bool reverse_truncated_mateer_gao_dft_test(
       }
       while(absolute_time() <= t2 + 1);
       t2 = (absolute_time() - t2) / i;
+      cout << "Time of reverse truncated Mateer-Gao DFT (regular variant):  " <<  t2 << " sec." << endl;
 
-      cout << "Time of reverse truncated Mateer-Gao DFT:  " <<  t2 << " sec." << endl;
+      double t3 = absolute_time();
+      i = 0;
+      do
+      {
+        memcpy(buffer1, refIn, sz * sizeof(word));
+        fft_mateer_truncated_reverse_fast<word,s>(&c, buffer1, lsz);
+        i++;
+      }
+      while(absolute_time() <= t3 + 1);
+      t3 = (absolute_time() - t3) / i;
+      cout << "Time of reverse truncated Mateer-Gao DFT (\"fast\" variant):  " <<  t3 << " sec." << endl;
+
       cout << "Reverse truncated MG / reverse truncated VzGG speed ratio: " << t1 / t2 << endl;
+      cout << "Reverse truncated MG fast / regular speed ratio: " << t2 / t3 << endl;
+      if(has_truncated_times)
+      {
+        cout << "Reverse truncated MG / truncated MG speed ratio: " << truncated_times[j] / t2 << endl;
+      }
+    }
+  }
+  return error;
+}
+
+bool reverse_truncated_mateer_gao_mult_repr_dft_test(
+    word* p_buffers,
+    cantor_basis<word>& c,
+    unsigned int* log_sz,
+    unsigned int num_sz,
+    double* truncated_times,
+    bool has_truncated_times,
+    bool check_correctness,
+    bool benchmark)
+{
+  uint64_t i;
+  double t1 = 0, t2 = 0;
+  constexpr unsigned int s = c_b_t<word>::word_logsize;
+  bool local_error, error = false;
+  uint32_t field_logsz = c_b_t<word>::n;
+
+  word* refIn = nullptr, *refOut = nullptr, *buffer1 = nullptr, *buffer2 = nullptr;
+  unsigned int lsz;
+  uint64_t sz;
+  lsz = field_logsz;
+  sz = 1uLL << lsz;
+  additive_fft<word> fft(&c);
+  cout << endl << endl << "Reverse truncated Mateer-Gao DFT test, multiplicative representation" << endl;
+  // testing that fft_mateer_truncated_reverse \circ fft_mateer_truncated = id
+  for(unsigned int j = 0; j < num_sz; j++)
+  {
+    lsz = log_sz[j];
+    if(lsz > c_b_t<word>::n) continue;
+    sz = 1uLL << lsz;
+    unsigned int buf_lsz = lsz;
+    uint64_t buf_sz = 1uLL << buf_lsz;
+    uint64_t check_sz = min<uint64_t>(1uLL << 12, sz);
+    if(2 * buf_sz + (buf_sz >> 2) + check_sz > allocated_buf_size)
+    {
+      cout << "degree too large to fit into allocated buffer for this test" << endl;
+      continue;
+    }
+    refIn   = p_buffers;
+    buffer1 = refIn + buf_sz;
+    buffer2 = buffer1 + buf_sz;
+    refOut  = buffer2 + (buf_sz >> 2);
+
+    surand(5);
+    for(i = 0; i < sz; i++) refIn[i] = static_cast<word>(urand());
+    if(check_correctness)
+    {
+      cout << endl << "Testing reverse truncated Mateer-Gao Fourier Transform " <<
+              ", on 2**" <<  lsz << " points, in field of size 2**" << field_logsz << endl;
+
+      for(i = 0; i < sz; i++) buffer1[i] = refIn[i];
+      fft.additive_fft_rev_fast_in_place(buffer1, lsz, buffer2, 0);
+      for( i = 0; i < check_sz; i++) refOut[i] = c.gamma_to_mult(buffer1[i]);
+      if(verbose) cout << "Applying reverse truncated Mateer-Gao DFT..." << endl;
+      for(i = 0; i < sz; i++) buffer1[i] = c.gamma_to_mult(refIn[i]);
+      fft_mateer_truncated_reverse_mult_fast<word,s>(&c, buffer1, lsz);
+
+      local_error = compare_results < word > (buffer1, refOut, check_sz);
+      error |= local_error;
+    }
+    if(benchmark)
+    {
+      cout << endl << "Benchmarking reverse truncated Mateer-Gao Fourier Transform " <<
+           ", on 2**" <<  lsz << " points, in field of size 2**" << field_logsz << endl;
+
+      t1 = absolute_time();
+      i = 0;
+      do
+      {
+        memcpy(buffer1, refIn, sz * sizeof(word));
+        fft_mateer_truncated_reverse<word, s>(&c, buffer1, lsz);
+        i++;
+      }
+      while(absolute_time() <= t1 + 1);
+      t1 = (absolute_time() - t1) / i;
+      cout << "Time of reverse truncated Mateer-Gao DFT:  " <<  t1 << " sec." << endl;
+
+      t2 = absolute_time();
+      i = 0;
+      do
+      {
+        memcpy(buffer1, refIn, sz * sizeof(word));
+        fft_mateer_truncated_reverse_mult<word,s>(&c, buffer1, lsz);
+        i++;
+      }
+      while(absolute_time() <= t2 + 1);
+      t2 = (absolute_time() - t2) / i;
+      cout << "Time of reverse truncated Mateer-Gao DFT in multiplicative representation:  " <<  t2 << " sec." << endl;
+
+      double t3 = absolute_time();
+      i = 0;
+      do
+      {
+        memcpy(buffer1, refIn, sz * sizeof(word));
+        fft_mateer_truncated_reverse_mult_fast<word,s>(&c, buffer1, lsz);
+        i++;
+      }
+      while(absolute_time() <= t3 + 1);
+      t3 = (absolute_time() - t3) / i;
+      cout << "Time of reverse fast truncated Mateer-Gao DFT in multiplicative representation:  " <<  t3 << " sec." << endl;
+
+      cout << "reverse MG multiplicative representation / gamma representation speed ratio: " << t1 / t2 << endl;
+      cout << "reverse MG multiplicative representation fast / regular representation speed ratio: " << t2 / t3 << endl;
       if(has_truncated_times)
       {
         cout << "Reverse truncated MG / truncated MG speed ratio: " << truncated_times[j] / t2 << endl;
@@ -588,7 +783,6 @@ bool mateer_gao_product_test(
   uint64_t i;
   double t1 = 0, t2 = 0;
   bool local_error, error = false;
-  surand(5);
   uint32_t field_logsz = c_b_t<word>::n;
 
   word *buffer1 = nullptr, *buffer2 = nullptr;
@@ -623,10 +817,11 @@ bool mateer_gao_product_test(
     buffer1 = p_buffers + ((sz*3) >> c_b_t<word>::word_logsize); //size dft_size
     buffer2 = buffer1 + dft_size; //size dft_size
     // create two random polynomials with sz/2 coefficients
+    surand(5);
     for(size_t i = 0; i < sz / 16; i++)
     {
-      p1[i] = rand() & 0xFF;
-      p2[i] = rand() & 0xFF;
+      p1[i] = urand() & 0xFF;
+      p2[i] = urand() & 0xFF;
     }
     if (check_correctness)
     {
@@ -649,6 +844,7 @@ bool mateer_gao_product_test(
            << degree << ", in field of size 2**" << field_logsz << endl;
       t1 = absolute_time();
       i = 0;
+#if 1
       cout << "Performing product with gf2x" << endl;
       do
       {
@@ -660,6 +856,7 @@ bool mateer_gao_product_test(
       t1 = (absolute_time() - t1) / i;
       cout << "gf2x time: " << t1 << endl;
       cout << "Performing product with MG DFT" << endl;
+#endif
       t2 = absolute_time();
       i = 0;
       do
@@ -669,6 +866,7 @@ bool mateer_gao_product_test(
       }
       while(absolute_time() <= t2 + 1);
       t2 = (absolute_time() - t2) / i;
+      cout << "iterations: " << i << endl;
       cout << "Mateer-Gao time: " << t2 << endl;
       cout << "MG / gf2x speed ratio: " << t1 / t2 << endl;
     }
@@ -898,8 +1096,6 @@ bool decompose_taylor_test(
     cout << "Iterative time: " << t2 << endl;
     cout << "Recursive time: " << t1 << endl;
     cout << "Taylor decomposition iterative / recursive speed ratio: " << t1 / t2 << endl;
-
-
   }
   return error;
 }
