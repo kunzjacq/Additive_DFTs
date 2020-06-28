@@ -1,6 +1,7 @@
 #include "finite_field.h"
 #include "additive_fft.h"
 #include "mateer_gao.h"
+#include "mateer_gao_alt.h"
 #include "utils.h"
 #include "polynomial_product.h"
 
@@ -12,6 +13,8 @@
 #include <cstring>
 #include <algorithm>
 
+// can be uint32_t or uint64_t currently, because cantor basis multiplicative representation functions
+// are only available in these sizes
 typedef uint32_t word;
 
 constexpr uint64_t allocated_buf_size = (1uLL<<(33 - c_b_t<word>::word_logsize))*1; //1 GB
@@ -316,19 +319,19 @@ bool reverse_dft_test(
 
 bool full_mateer_gao_test(word* p_buffers, cantor_basis<word>& c, bool check_correctness, bool benchmark)
 {
-  uint64_t i;
   bool error = false;
-  constexpr uint32_t field_sz = c_b_t<word>::n;
-  uint64_t sz = 1uLL << field_sz;
-
   cout << dec;
   cout << endl << "Full Mateer-Gao (M-G) DFT test/benchmark" << endl;
   if constexpr(c_b_t<word>::n >= full_dft_test_size_limit)
   {
     cout << endl << "Size too large, skipping test" << endl;
+    return false;
   }
   else
   {
+    uint64_t i;
+    constexpr uint32_t field_sz = c_b_t<word>::n;
+    uint64_t sz = 1uLL << field_sz;
     constexpr unsigned int s = c_b_t<word>::word_logsize;
     additive_fft<word> fft(&c);
     uint64_t check_sz = min<uint64_t>(1uLL << 12, sz);
@@ -407,6 +410,7 @@ bool truncated_mateer_gao_dft_test(
   uint64_t i;
   bool local_error, error = false;
   uint32_t field_logsz = c_b_t<word>::n;
+  constexpr unsigned int s = c_b_t<word>::word_logsize;
 
   word* refIn = nullptr, *refOut = nullptr, *buffer1 = nullptr, *buffer2 = nullptr;
   unsigned int lsz;
@@ -447,7 +451,8 @@ bool truncated_mateer_gao_dft_test(
 
       if(verbose) cout << "Computing reference values with truncated VzGG DFT..." << endl;
       for(i = 0; i < buf_sz; i++) buffer1[i] = refIn[i];
-      fft.additive_fft_fast_in_place(buffer1, degree, lsz, buffer2, 0);
+      word block_offset = 0; //(1uLL<<12)-1;
+      fft.additive_fft_fast_in_place(buffer1, degree, lsz, buffer2, block_offset);
       for( i = 0; i < check_sz; i++) refOut[i] = buffer1[i];
 
       if(verbose) cout << "Evaluating polynomial with truncated VzGG DFT combined with MG DFT..." << endl;
@@ -458,13 +463,13 @@ bool truncated_mateer_gao_dft_test(
 
       if(verbose) cout << "Evaluating polynomial with truncated MG DFT..." << endl;
       for(i = 0; i < buf_sz; i++) buffer1[i] = refIn[i];
-      fft_mateer_truncated<word, c_b_t<word>::word_logsize>(&c, buffer1, lsz);
+      fft_mateer_truncated<word, s>(&c, buffer1, lsz, block_offset);
       local_error = compare_results<word>(buffer1, refOut, check_sz, 8, verbose);
       error |= local_error;
 
       if(verbose) cout << "Evaluating polynomial with truncated MG DFT (\"fast\" variant)..." << endl;
       for(i = 0; i < buf_sz; i++) buffer1[i] = refIn[i];
-      fft_mateer_truncated_fast<word, c_b_t<word>::word_logsize>(&c, buffer1, lsz);
+      fft_mateer_truncated_fast<word, s>(&c, buffer1, lsz);
       local_error = compare_results<word>(buffer1, refOut, check_sz, 8, verbose);
       error |= local_error;
 
@@ -472,13 +477,13 @@ bool truncated_mateer_gao_dft_test(
 
       if(verbose) cout << "Evaluating polynomial with truncated MG DFT in multiplicative representation..." << endl;
       for(i = 0; i < buf_sz; i++) buffer1[i] = c.gamma_to_mult(refIn[i]);
-      fft_mateer_truncated_mult<word, c_b_t<word>::word_logsize>(&c, buffer1, lsz);
+      fft_mateer_truncated_mult<word, s>(&c, buffer1, lsz);
       local_error = compare_results<word>(buffer1, refOut, check_sz, 8, verbose);
       error |= local_error;
 
       if(verbose) cout << "Evaluating polynomial with truncated MG DFT in multiplicative representation (\"fast\" variant)..." << endl;
       for(i = 0; i < buf_sz; i++) buffer1[i] = c.gamma_to_mult(refIn[i]);
-      fft_mateer_truncated_fast_mult<word, c_b_t<word>::word_logsize>(&c, buffer1, lsz);
+      fft_mateer_truncated_fast_mult<word, s>(&c, buffer1, lsz);
       local_error = compare_results<word>(buffer1, refOut, check_sz, 8, verbose);
       error |= local_error;
     }
@@ -515,7 +520,7 @@ bool truncated_mateer_gao_dft_test(
       do
       {
         for(i = 0; i < buf_sz; i++) buffer1[i] = refIn[i];
-        fft_mateer_truncated<word, c_b_t<word>::word_logsize>(&c, buffer1, lsz);
+        fft_mateer_truncated<word, s>(&c, buffer1, lsz);
         count++;
       }
       while(absolute_time() <= t3 + 1);
@@ -528,7 +533,7 @@ bool truncated_mateer_gao_dft_test(
       do
       {
         for(i = 0; i < buf_sz; i++) buffer1[i] = refIn[i];
-        fft_mateer_truncated_fast<word, c_b_t<word>::word_logsize>(&c, buffer1, lsz);
+        fft_mateer_truncated_fast<word, s>(&c, buffer1, lsz);
         count++;
       }
       while(absolute_time() <= t4 + 1);
@@ -540,7 +545,7 @@ bool truncated_mateer_gao_dft_test(
       do
       {
         for(i = 0; i < buf_sz; i++) buffer1[i] = refIn[i];
-        fft_mateer_truncated_mult<word, c_b_t<word>::word_logsize>(&c, buffer1, lsz);
+        fft_mateer_truncated_mult<word, s>(&c, buffer1, lsz);
         count++;
       }
       while(absolute_time() <= t5 + 1);
@@ -552,7 +557,7 @@ bool truncated_mateer_gao_dft_test(
       do
       {
         memcpy(buffer1, refIn, sz * sizeof(word));
-        fft_mateer_truncated_fast_mult<word, c_b_t<word>::word_logsize>(&c, buffer1, lsz);
+        fft_mateer_truncated_fast_mult<word, s>(&c, buffer1, lsz);
         count++;
       }
       while(absolute_time() <= t6 + 1);
@@ -564,7 +569,7 @@ bool truncated_mateer_gao_dft_test(
       do
       {
         for(i = 0; i < buf_sz; i++) buffer1[i] = c.gamma_to_mult(refIn[i]);
-        fft_mateer_truncated_mult<word, c_b_t<word>::word_logsize>(&c, buffer1, lsz);
+        fft_mateer_truncated_mult<word, s>(&c, buffer1, lsz);
         // FIXME: we should be doing mult_to_gamma here
         // but we use gamma_to_mult as a proxy for the computation time since mult_to_gamma is
         // not implemented
@@ -794,10 +799,10 @@ bool mateer_gao_product_test(
     uint64_t needed_buf_bitsize = sz*3 + 2*(dft_size << c_b_t<word>::word_logsize);
     if(needed_buf_bitsize > (allocated_buf_size << c_b_t<word>::word_logsize))
     {
-      //cout << "Allocated buffer is too small for this test" << endl;
-      //cout << "Needed buf size: " << (needed_buf_bitsize >> (23)) <<
-      //        "MB; allocated: " << (allocated_buf_size >>(23-c_b_t<word>::word_logsize))<< "MB" << endl;
-      continue;
+      cout << "Allocated buffer is too small for this test" << endl;
+      cout << "Needed buf size: " << (needed_buf_bitsize >> (23)) <<
+              "MB; allocated: " << (allocated_buf_size >>(23-c_b_t<word>::word_logsize))<< "MB" << endl;
+      break; // assume sizes are increasing, therefore remaining tests are skipped as well
     }
     // total buffer size needed : 2*sz words + 3/8*sz bytes =
     // ((sz*3) >> c_b_t<word>::word_logsize) words + 2*sz
@@ -825,7 +830,7 @@ bool mateer_gao_product_test(
       // multiply polynomials with additive fft, put result in p4
       binary_polynomial_multiply_alt<word>( &c, p1, p2, p4, buffer1, buffer2, sz/2 - 1, sz/2 - 1, dft_logsize);
       // compare results
-      local_error = compare_results < uint8_t > (p3, p4, sz/8);
+      local_error = compare_results<uint8_t>(p3, p4, sz/8);
       error |= local_error;
     }
     if(benchmark)

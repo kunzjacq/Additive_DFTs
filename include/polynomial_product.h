@@ -41,7 +41,7 @@ void binary_polynomial_to_words(cantor_basis<word>* c_b, uint8_t* p, word* res, 
 }
 
 template <class word>
-void binary_polynomial_to_words_alt(uint8_t* p, word* res, size_t d, size_t fft_size)
+void binary_polynomial_to_words_mult(uint8_t* p, word* res, size_t d, size_t fft_size)
 {
   constexpr unsigned int bytes_per_word = c_b_t<word>::n >> 4;
   size_t j = 0, k = 0;
@@ -57,6 +57,19 @@ void binary_polynomial_to_words_alt(uint8_t* p, word* res, size_t d, size_t fft_
     }
   }
   for(; j < fft_size;j++) res[j] = 0;
+}
+
+template <class word>
+uint64_t binary_polynomial_to_words_mult_little_endian(uint8_t* p, word* res, uint64_t d, size_t fft_size)
+{
+  auto source = reinterpret_cast<typename c_b_t<word>::half_type*>(p);
+  int num_bits_half = sizeof(typename c_b_t<word>::half_type)*8;
+  uint64_t dw = d / num_bits_half + 1;
+  uint64_t j = 0;
+  // little endian
+  for(j = 0; j < dw; j++) res[j] = source[j];
+  for(; j < fft_size;j++) res[j] = 0;
+  return dw;
 }
 
 template<>
@@ -105,7 +118,7 @@ void words_to_binary_polynomial(cantor_basis<word>* c_b, word* buf, uint8_t* p, 
 
 
 template <class word>
-void words_to_binary_polynomial_alt(word* buf, uint8_t* p, size_t d, size_t fft_size)
+void words_to_binary_polynomial_mult(word* buf, uint8_t* p, size_t d, size_t fft_size)
 {
   constexpr unsigned int bytes_per_word = c_b_t<word>::n >> 4;
   constexpr unsigned int bits_per_word  = c_b_t<word>::n >> 1;
@@ -129,6 +142,27 @@ void words_to_binary_polynomial_alt(word* buf, uint8_t* p, size_t d, size_t fft_
     p[ bound * bytes_per_word + j] = (up  >> (8*j)) & 0xFF;
   }
   for(size_t i = d / 8 + 1; i < fft_size; i++) p[i] = 0;
+}
+
+template <class word>
+void words_to_binary_polynomial_mult_little_endian(word* buf, uint8_t* p, uint64_t d)
+{
+  constexpr unsigned int bits_per_half_word  = c_b_t<word>::n >> 1;
+  const size_t bound = d / bits_per_half_word + 1;
+  word* dest_even = reinterpret_cast<word*>(p);
+  word* dest_odd  = reinterpret_cast<word*>(p + (bits_per_half_word >> 3));
+  for(uint64_t i = 0; i < d/8+1; i++) p[i] = 0;
+  for(uint64_t i = 0; i < bound; i++)
+  {
+    if((i&1)==0)
+    {
+      dest_even[i >> 1] ^= buf[i];
+    }
+    else
+    {
+      dest_odd[i >> 1]  ^= buf[i];
+    }
+  }
 }
 
 template <>
@@ -180,19 +214,12 @@ void binary_polynomial_multiply(
   constexpr unsigned int bits_per_word  = c_b_t<word>::n >> 1;
   const size_t bound = (d1+d2) / bits_per_word + 1;
 #endif
-  const size_t sz = (1uL << logsize);
+  const size_t sz = (1uLL << logsize);
   assert(sz >= bound);
   assert(logsize <= c_b_t<word>::n);
 
   binary_polynomial_to_words(c_b, p1, b1, d1, sz);
   binary_polynomial_to_words(c_b, p2, b2, d2, sz);
-
-  // instead of using mateer-gao directly, we could have used
-  //additive_fft<word> fft(c_b);
-  //fft.vzgg_mateer_gao_combination(b1, d1/bits_per_word + 1 , logsize);
-  //fft.vzgg_mateer_gao_combination(b2, d2/bits_per_word + 1 , logsize);
-  // but this does not help since in this case, the degree of the polynomials transformed
-  // is less that 2**logsize.
   fft_mateer_truncated<word,s>(c_b, b1, logsize);
   fft_mateer_truncated<word,s>(c_b, b2, logsize);
   for(size_t i = 0; i < sz; i++) b1[i] = c_b->multiply(b1[i], b2[i]);
@@ -208,19 +235,22 @@ void binary_polynomial_multiply_alt(
     size_t d1, size_t d2, unsigned int logsize)
 {
   constexpr unsigned int s = c_b_t<word>::word_logsize;
-  // max number of words to store result:
-  // = (d1 + d2 + 1 + bits_per_word - 1) / bits_per_word = (d1 + d2) / bits_per_word + 1;
-#ifndef NDEBUG
-  constexpr unsigned int bits_per_word  = c_b_t<word>::n >> 1;
-  const size_t bound = (d1+d2) / bits_per_word + 1;
-#endif
-  const size_t sz = (1uL << logsize);
-
-  binary_polynomial_to_words_alt(p1, b1, d1, sz);
-  binary_polynomial_to_words_alt(p2, b2, d2, sz);
+  const size_t sz = (1uLL << logsize);
+  uint64_t w1 = binary_polynomial_to_words_mult_little_endian(p1, b1, d1, sz);
+  uint64_t w2 = binary_polynomial_to_words_mult_little_endian(p2, b2, d2, sz);
+#if 1
+  int logsizeprime = logsize;
+  while(1uLL << logsizeprime >= 2 * w1) logsizeprime--;
+  fft_mateer_truncated_mult_smalldegree<word>(c_b, b1, logsizeprime, logsize);
+  logsizeprime = logsize;
+  while(1uLL << logsizeprime >= 2 * w2) logsizeprime--;
+  fft_mateer_truncated_mult_smalldegree<word>(c_b, b2, logsizeprime, logsize);
+#else
   fft_mateer_truncated_mult<word,s>(c_b, b1, logsize);
   fft_mateer_truncated_mult<word,s>(c_b, b2, logsize);
+#endif
   for(size_t i = 0; i < sz; i++) b1[i] = c_b->multiply_mult_repr(b1[i], b2[i]);
   fft_mateer_truncated_reverse_mult<word,s>(c_b, b1, logsize);
-  words_to_binary_polynomial_alt(b1, result, d1 + d2, sz);
+  words_to_binary_polynomial_mult_little_endian(b1, result, d1 + d2);
+  //words_to_binary_polynomial_mult(b1, result, d1 + d2, sz);
 }
