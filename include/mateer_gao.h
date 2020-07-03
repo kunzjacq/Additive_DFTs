@@ -413,8 +413,6 @@ void fft_aux_ref_truncated_mult_offset(
   }
 }
 
-
-
 template <class word>
 void fft_mateer_truncated_mult_smalldegree(
     cantor_basis<word>* c_b,
@@ -430,15 +428,15 @@ void fft_mateer_truncated_mult_smalldegree(
   const unsigned int t = 1 << (sprime - 1);
   const uint64_t eta   = 1uLL << logsizeprime;
   decompose_taylor_iterative_alt(0, 2 * t, t, eta, poly);
-  for(word i = 1; i < 1uLL << (logsize - logsizeprime); i++)
+  for(uint64_t i = 1; i < 1uLL << (logsize - logsizeprime); i++)
   {
-    for(word j = 0; j < 1uLL << logsizeprime; j++)
+    for(uint64_t j = 0; j < 1uLL << logsizeprime; j++)
     {
       poly[j + (i << logsizeprime)] = poly[j];
     }
   }
 
-  for(word i = 0; i < 1uLL << (logsize - logsizeprime); i++)
+  for(uint64_t i = 0; i < 1uLL << (logsize - logsizeprime); i++)
   {
     fft_aux_ref_truncated_mult_offset<word, s>(c_b, poly + (i << logsizeprime), i << logsizeprime, 0, logsizeprime, true);
   }

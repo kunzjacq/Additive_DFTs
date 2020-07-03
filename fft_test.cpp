@@ -15,7 +15,7 @@
 
 // can be uint32_t or uint64_t currently, because cantor basis multiplicative representation functions
 // are only available in these sizes
-typedef uint32_t word;
+typedef uint64_t word;
 
 constexpr uint64_t allocated_buf_size = (1uLL<<(33 - c_b_t<word>::word_logsize))*1; //1 GB
 
@@ -24,7 +24,6 @@ constexpr bool check_correctness = true;
 constexpr bool benchmark = true;
 constexpr int full_dft_test_size_limit = 16; // do not perform full DFTs above this size
 
-static void reorder(cantor_basis<word>* c_b, word *in, word* out, size_t log_sz, const word& x);
 static int test_relations(const cantor_basis<word>& c_b, const word& x);
 
 
@@ -451,7 +450,7 @@ bool truncated_mateer_gao_dft_test(
 
       if(verbose) cout << "Computing reference values with truncated VzGG DFT..." << endl;
       for(i = 0; i < buf_sz; i++) buffer1[i] = refIn[i];
-      word block_offset = 0; //(1uLL<<12)-1;
+      uint64_t block_offset = 0; //(1uLL<<12)-1;
       fft.additive_fft_fast_in_place(buffer1, degree, lsz, buffer2, block_offset);
       for( i = 0; i < check_sz; i++) refOut[i] = buffer1[i];
 
@@ -570,10 +569,7 @@ bool truncated_mateer_gao_dft_test(
       {
         for(i = 0; i < buf_sz; i++) buffer1[i] = c.gamma_to_mult(refIn[i]);
         fft_mateer_truncated_mult<word, s>(&c, buffer1, lsz);
-        // FIXME: we should be doing mult_to_gamma here
-        // but we use gamma_to_mult as a proxy for the computation time since mult_to_gamma is
-        // not implemented
-        for(i = 0; i < buf_sz; i++) buffer1[i] = c.gamma_to_mult(buffer1[i]);
+        for(i = 0; i < buf_sz; i++) buffer1[i] = c.mult_to_gamma(buffer1[i]);
         count++;
       }
       while(absolute_time() <= t7 + 1);
@@ -741,10 +737,7 @@ bool reverse_truncated_mateer_gao_dft_test(
       {
         for(i = 0; i < sz; i++) buffer1[i] = c.gamma_to_mult(refIn[i]);
         fft_mateer_truncated_reverse_mult<word, s>(&c, buffer1, lsz);
-        // FIXME: we should be doing mult_to_gamma here
-        // but we use gamma_to_mult as a proxy for the computation time since mult_to_gamma is
-        // not implemented
-        for(i = 0; i < sz; i++) buffer1[i] = c.gamma_to_mult(buffer1[i]);
+        for(i = 0; i < sz; i++) buffer1[i] = c.mult_to_gamma(buffer1[i]);
         count++;
       }
       while(absolute_time() <= t6 + 1);
@@ -870,112 +863,121 @@ bool mateer_gao_product_test(
   return error;
 }
 
+
+template <class word>
+void reorder(cantor_basis<word>* c_b, word *in, word* out, size_t log_sz, const word& x)
+{
+  if constexpr(c_b_t<word>::n < 64)
+  {
+    word x_pow_i = 1;
+    size_t order = (1uL << log_sz) - 1;
+    for(size_t i = 0; i < order; i++)
+    {
+      // x_pow_i = x**i
+      uint64_t idx = c_b->gamma_to_beta(x_pow_i);
+      out[i] = in[idx];
+      x_pow_i = c_b->multiply(x_pow_i, x);
+    }
+    out[order] = 0;
+  }
+}
+
 bool dft_inversion_test(word* p_buffers, cantor_basis<word>& c)
 {
   unsigned int log_sz = c_b_t<word>::n;
   // required to avoid hitting some static_asserts
   if constexpr(c_b_t<word>::n >= 64) return false;
-
-  int local_error = 0, error = 0;
-  const uint64_t sz = 1uLL << log_sz;
-  uint64_t i;
-  uint64_t degree = sz - 2;
-  uint64_t buf_sz = sz;
-  while(buf_sz < degree + 1) buf_sz <<= 1;
-  cout << endl << endl << "Testing Inverse relation on Fourier Transform of polynomial of "
-          "degree " << degree << ", in field of size 2**" << log_sz << endl;
-  if constexpr(c_b_t<word>::n >= full_dft_test_size_limit)
+  else
   {
-    cout << "Size too large for this test, skipping it" << endl;
-    return false;
-  }
-  if(3 * buf_sz > allocated_buf_size)
-  {
-    cout << "degree too large to fit into allocated buffer for this test" << endl;
-    return false;
-  }
-  word* refIn, *buffer1, *buffer2;
-  refIn   = p_buffers + 0 * buf_sz;
-  buffer1 = p_buffers + 1 * buf_sz;
-  buffer2 = p_buffers + 2 * buf_sz;
-  surand(5);
-  for (i = 0; i <= degree; i++) refIn[i] = static_cast<word>(urand());
-  for(; i < sz; i++) refIn[i] = 0;
-
-  // choose element according to which the fft will be re-ordered
-  // i.e. a primitive element x s.t. after reordering, the output array contains
-  // f(1), f(x), f(x**2), ..., f(x**order - 1)
-  unsigned int idx = log_sz - 1;
-  word x;
-  while(!is_primitive((x = c.beta_over_gamma(idx)), c)) idx--;
-  if(test_relations(c, x))
-  {
-    cout << "reording element is not primitive or inversion relations do not hold, aborting" << endl;
-    return 1;
-  }
-
-  additive_fft<word> fft(&c);
-
-  for(int a = 0; a < 2; a++)
-  {
-    for(int b = 0; b < 2; b++)
+    int local_error = 0, error = 0;
+    const uint64_t sz = 1uLL << log_sz;
+    uint64_t i;
+    uint64_t degree = sz - 2;
+    uint64_t buf_sz = sz;
+    while(buf_sz < degree + 1) buf_sz <<= 1;
+    cout << endl << endl << "Testing Inverse relation on Fourier Transform of polynomial of "
+                            "degree " << degree << ", in field of size 2**" << log_sz << endl;
+    if constexpr(c_b_t<word>::n >= full_dft_test_size_limit)
     {
-      memcpy(buffer1, refIn, sz * sizeof(word));
-      cout << "Doing 1st Fourier Transform ";
-      if(a)
-      {
-        cout << "with direct method" << endl;
-        fft.fft_direct_exp(buffer1, degree, log_sz, x, buffer2);
-      }
-      else
-      {
-        cout << "with additive method" << endl;
-        fft.additive_fft_fast_in_place(buffer1, degree, log_sz, buffer2, 0);
-        reorder(&c, buffer1, buffer2, log_sz, x);
-      }
-      cout << "Doing 2nd Fourier Transform ";
-      if(b)
-      {
-        cout << "with direct method" << endl;
-        fft.fft_direct_exp(buffer2, sz - 2, log_sz, x, buffer1);
-        memcpy(buffer2, buffer1, sz * sizeof(word));
-      }
-      else
-      {
-        cout << "with additive method" << endl;
-        fft.additive_fft_fast_in_place(buffer2, sz - 2, log_sz, buffer1, 0);
-        memcpy(buffer1, buffer2, sz * sizeof(word));
-        reorder(&c, buffer1, buffer2, log_sz, x);
-      }
-      for(size_t i = 1; i < sz/2; i++) swap(buffer2[i], buffer2[sz - 1 - i]);
-      local_error = memcmp(buffer2, refIn, (sz - 1) * sizeof(word));
-      if(local_error)
-      {
-        cout << "Double DFT and initial polynomial differ: " << endl;
-        compare_results<word>(refIn, buffer2, (sz - 1), 16);
-      }
-      else
-      {
-        cout << "Double DFT is identity" << endl;
-      }
-      error |= local_error;
+      cout << "Size too large for this test, skipping it" << endl;
+      return false;
     }
+    if(3 * buf_sz > allocated_buf_size)
+    {
+      cout << "degree too large to fit into allocated buffer for this test" << endl;
+      return false;
+    }
+    word* refIn, *buffer1, *buffer2;
+    refIn   = p_buffers + 0 * buf_sz;
+    buffer1 = p_buffers + 1 * buf_sz;
+    buffer2 = p_buffers + 2 * buf_sz;
+    surand(5);
+    for (i = 0; i <= degree; i++) refIn[i] = static_cast<word>(urand());
+    for(; i < sz; i++) refIn[i] = 0;
+
+    // choose element according to which the fft will be re-ordered
+    // i.e. a primitive element x s.t. after reordering, the output array contains
+    // f(1), f(x), f(x**2), ..., f(x**order - 1)
+    unsigned int idx = log_sz - 1;
+    word x;
+    while(!is_primitive((x = c.beta_over_gamma(idx)), c)) idx--;
+    if(test_relations(c, x))
+    {
+      cout << "reording element is not primitive or inversion relations do not hold, aborting" << endl;
+      return 1;
+    }
+
+    additive_fft<word> fft(&c);
+
+    for(int a = 0; a < 2; a++)
+    {
+      for(int b = 0; b < 2; b++)
+      {
+        memcpy(buffer1, refIn, sz * sizeof(word));
+        cout << "Doing 1st Fourier Transform ";
+        if(a)
+        {
+          cout << "with direct method" << endl;
+          fft.fft_direct_exp(buffer1, degree, log_sz, x, buffer2);
+        }
+        else
+        {
+          cout << "with additive method" << endl;
+          fft.additive_fft_fast_in_place(buffer1, degree, log_sz, buffer2, 0);
+          reorder<word>(&c, buffer1, buffer2, log_sz, x);
+        }
+        cout << "Doing 2nd Fourier Transform ";
+        if(b)
+        {
+          cout << "with direct method" << endl;
+          fft.fft_direct_exp(buffer2, sz - 2, log_sz, x, buffer1);
+          memcpy(buffer2, buffer1, sz * sizeof(word));
+        }
+        else
+        {
+          cout << "with additive method" << endl;
+          fft.additive_fft_fast_in_place(buffer2, sz - 2, log_sz, buffer1, 0);
+          memcpy(buffer1, buffer2, sz * sizeof(word));
+          reorder<word>(&c, buffer1, buffer2, log_sz, x);
+        }
+        for(size_t i = 1; i < sz/2; i++) swap(buffer2[i], buffer2[sz - 1 - i]);
+        local_error = memcmp(buffer2, refIn, (sz - 1) * sizeof(word));
+        if(local_error)
+        {
+          cout << "Double DFT and initial polynomial differ: " << endl;
+          compare_results<word>(refIn, buffer2, (sz - 1), 16);
+        }
+        else
+        {
+          cout << "Double DFT is identity" << endl;
+        }
+        error |= local_error;
+      }
+    }
+    return error;
   }
-  return error;
 }
 
-void reorder(cantor_basis<word>* c_b, word *in, word* out, size_t log_sz, const word& x)
-{
-  word x_pow_i = 1;
-  size_t order = (1uL << log_sz) - 1;
-  for(size_t i = 0; i < order; i++)
-  {
-    // x_pow_i = x**i
-    out[i] = in[c_b->gamma_to_beta(x_pow_i)];
-    x_pow_i = c_b->multiply(x_pow_i, x);
-  }
-  out[order] = 0;
-}
 
 int test_relations(const cantor_basis<word>& c_b, const word& x)
 {
