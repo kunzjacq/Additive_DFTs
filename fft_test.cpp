@@ -260,11 +260,18 @@ bool reverse_dft_test(
     additive_fft<word> fft(&c);
     cout << endl << "Testing reverse additive DFT of polynomial of degree " << degree <<
             ", on 2**" <<  lsz << " points, in field of size 2**" << word_sz << endl;
+
+    if(2 * sz + (sz >> 2)  > allocated_buf_size)
+    {
+      cout << "DFT size too large to fit into buffers for this test" << endl;
+      continue;
+    }
+
     word* refIn, *buffer1, *buffer2;
 
-    refIn   = p_buffers + 0 * sz;
-    buffer1 = p_buffers + 1 * sz;
-    buffer2 = p_buffers + 2 * sz;
+    refIn   = p_buffers;    //size sz
+    buffer1 = refIn + sz;   // size sz
+    buffer2 = buffer1 + sz; // size sz >> 2
     for (i = 0; i <= degree; i++) refIn[i] = static_cast<word>(urand());
     for(; i < sz; i++) refIn[i] = 0;
 

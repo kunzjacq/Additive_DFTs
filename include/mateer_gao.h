@@ -361,8 +361,14 @@ void fft_aux_ref_truncated_mult(
   }
 }
 
+/**
+ * computes the 2**logsize first values of 2**logstride interleaved polynomials on input
+ * with <= 2**logsize coefficients
+ * i.e. performes 2**logstride interleaved partial DFTS
+ * => acts on an array of size 2**(logstride+logsize)
+ */
 template <class word, int s>
-void fft_aux_ref_truncated_mult_offset(
+inline void fft_aux_ref_truncated_mult_offset(
     cantor_basis<word>* c_b,
     word* poly,
     word offset,
@@ -388,7 +394,7 @@ void fft_aux_ref_truncated_mult_offset(
   }
   else
   {
-    const unsigned int t = 1 << (s - 1);
+    constexpr unsigned int t = 1 << (s - 1);
     if(logsize <= t)
     {
       fft_aux_ref_truncated_mult_offset<word, s - 1>(c_b, poly, offset, logstride, logsize, first_taylor_done);
@@ -444,7 +450,7 @@ void fft_mateer_truncated_mult_smalldegree(
 
 
 template <class word, int s>
-void fft_aux_ref_truncated_reverse_mult(
+inline void fft_aux_ref_truncated_reverse_mult(
     cantor_basis<word>* c_b,
     word* poly,
     word j, // block index to process
