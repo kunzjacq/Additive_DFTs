@@ -314,6 +314,7 @@ word cantor_basis_bare<word>::gamma_to_beta(const word& w) const
   {
     res ^= m_gamma_to_beta_table[256*byte_idx + static_cast<unsigned int>(wp & 0xFF)];
     wp >>= 8;
+    if(wp == 0) break;
   }
 #endif
   return res;
@@ -330,6 +331,7 @@ word cantor_basis_bare<word>::beta_to_mult(const word& w, unsigned int num_bytes
     unsigned int bp = static_cast<unsigned int>(wp & 0xFF);
     if(bp) res ^= m_beta_to_mult_table[256*byte_idx + bp];
     wp >>= 8;
+    if(wp == 0) break;
   }
   return res;
 }
@@ -348,6 +350,7 @@ word cantor_basis_bare<word>::beta_to_gamma(const word& w, unsigned int num_byte
     unsigned int bp = static_cast<unsigned int>(wp & 0xFF);
     if(bp) res ^= m_beta_to_gamma_table[256*byte_idx + bp];
     wp >>= 8;
+    if(wp == 0) break;
   }
 #endif
   return res;
@@ -366,6 +369,7 @@ word cantor_basis_bare<word>::gamma_to_mult(const word& w) const
     unsigned int bp = static_cast<unsigned int>(wp & 0xFF);
     if(bp) res ^= m_gamma_to_mult_table[256*byte_idx + bp];
     wp >>= 8;
+    if(wp == 0) break;
   }
 #endif
   return res;
@@ -384,6 +388,7 @@ word cantor_basis_bare<word>::mult_to_gamma(const word& w, unsigned int num_byte
   {
     res ^= m_mult_to_gamma_table[256*byte_idx + static_cast<unsigned int>(wp & 0xFF)];
     wp >>= 8;
+    if(wp == 0) break;
   }
 #endif
   return res;
