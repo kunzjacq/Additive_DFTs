@@ -238,6 +238,7 @@ private:
 
   word* m_mult_over_gamma;
   word* m_gamma_over_mult;
+  word* m_beta_over_mult;
   word* m_mult_to_gamma_table;
   word* m_gamma_to_mult_table;
 

@@ -12,6 +12,10 @@
 static int depth = 0;
 static constexpr int debug = false;
 
+// enable a more efficient multiplication in multiplicative representation thanks
+// to a specially chosen minimal polynomial of the generator
+static constexpr bool use_new_gen = true;
+
 template<class word>
 cantor_basis_bare<word>::cantor_basis_bare():
   m_beta_over_gamma(new word[c_b_t<word>::n]),
@@ -20,6 +24,7 @@ cantor_basis_bare<word>::cantor_basis_bare():
   m_gamma_to_beta_table(new word[256*sizeof(word)]),
   m_mult_over_gamma(new word[c_b_t<word>::n]),
   m_gamma_over_mult(new word[c_b_t<word>::n]),
+  m_beta_over_mult(new word[c_b_t<word>::n]),
   m_mult_to_gamma_table(new word[256*sizeof(word)]),
   m_gamma_to_mult_table(new word[256*sizeof(word)]),
   m_mult_mul_table(nullptr),
@@ -68,6 +73,8 @@ void cantor_basis_bare<word>::free_memory()
   m_mult_over_gamma = nullptr;
   delete[] m_gamma_over_mult;
   m_gamma_over_mult = nullptr;
+  delete[] m_beta_over_mult;
+  m_beta_over_mult = nullptr;
   delete[] m_mult_to_gamma_table;
   m_mult_to_gamma_table = nullptr;
   delete[] m_beta_to_mult_table;
@@ -184,8 +191,16 @@ void cantor_basis_bare<word>::build()
 
   // initialize multiplicative base
   word u = 1;
-  m_mult_over_gamma[0] = 1;
-  m_mult_over_gamma[1] = u << (n/2);
+  m_mult_over_gamma[0] = u;
+  if constexpr(c_b_t<word>::n == 64 && use_new_gen)
+  {
+    // for n=64: use 0x50c3389433a2b6cc, which has minimal polynomial x^64 + x^4 + x^3 + x + 1
+    m_mult_over_gamma[1] = 0x50c3389433a2b6cc;
+  }
+  else
+  {
+    m_mult_over_gamma[1] = u << (n/2);
+  }
   for(unsigned int i = 2 ; i < n; i++)
   {
     m_mult_over_gamma[i] = multiply(m_mult_over_gamma[i-1], m_mult_over_gamma[1]);
@@ -237,8 +252,14 @@ void cantor_basis_bare<word>::build()
 
   mult_generator_minimal_polynomial = gamma_to_mult(mult_generator_minimal_polynomial_gamma);
 
+  if constexpr(c_b_t<word>::n == 64 && use_new_gen && debug)
+  {
+    cout << "Multiplicative generator minimal polynomial:" << hex << mult_generator_minimal_polynomial << endl;
+  }
+
+
   if constexpr(c_b_t<word>::n == 32 || c_b_t<word>::n == 64)
-{
+  {
     m_mult_mul_table = new word[(1uLL<<mult_mul_table_logsize)*c_b_t<word>::n/mult_mul_table_logsize];
     for(unsigned int sub_idx = 0; sub_idx < c_b_t<word>::n/mult_mul_table_logsize; sub_idx++)
     {
@@ -256,12 +277,42 @@ void cantor_basis_bare<word>::build()
     }
   }
 
+  if constexpr(c_b_t<word>::n == 64 && !use_new_gen)
+  {
+    // computed with sage a a root of x^64 + x^4 + x^3 + x + 1
+    uint64_t new_mult_gen = 0x23ec4049a11d7802;
+    uint64_t new_mult_gen_gamma = mult_to_gamma(new_mult_gen);
+    if(debug) cout << "Multiplicative generator in gamma representation w: " << hex << new_mult_gen_gamma << dec << endl;
+    uint64_t acc = 1, val = new_mult_gen_gamma;
+    for(int i=1; i <= 64; i++)
+    {
+      if(i==1 || i==3 || i==4 || i==64) acc ^= val;
+      val = multiply(val,new_mult_gen_gamma);
+    }
+    if(debug) cout << "Minimal polynomial of w evaluated at w: " << acc << endl;
+  }
+
+  word v = 1;
+  for(unsigned int i = 0; i < c_b_t<word>::n; i++)
+  {
+    m_beta_over_mult[i] = gamma_to_mult(beta_to_gamma(v));
+    v <<= 1;
+  }
+
+  if(debug)
+  {
+    cout << endl << "beta/mult:" << endl;
+    print_matrix(m_beta_over_mult);
+  }
+
+
   for(unsigned int byte_idx = 0; byte_idx < sizeof(word); byte_idx++)
   {
     for(unsigned int b = 0; b < 256; b++)
     {
       word w = static_cast<word>(b) << (8*byte_idx);
-      m_beta_to_mult_table[256*byte_idx + b] = gamma_to_mult(beta_to_gamma(w));
+      word im_w = gamma_to_mult(beta_to_gamma(w));
+      m_beta_to_mult_table[256*byte_idx + b] = im_w;
     }
   }
 
@@ -657,22 +708,42 @@ inline word cantor_basis_bare<word>::multiply_mult_repr(const word &a, const wor
   }
   else if constexpr(c_b_t<word>::n == 64)
   {
-    __m128i aa = _mm_set1_epi64x(a);
-    __m128i bb = _mm_set1_epi64x(b);
-    __m128i cc = _mm_clmulepi64_si128(aa,bb, 0);
-
-    uint64_t ab_low = _mm_cvtsi128_si64(cc);     // lower 64 bits
-    uint64_t ab_high = _mm_extract_epi64(cc, 1); // upper 64 bits
-    uint64_t* t = m_mult_mul_table;
-    constexpr uint64_t mask = (1uLL << mult_mul_table_logsize) - 1;
-    uint64_t m = t[ab_high&mask];
-    for(unsigned int i = 0; i < c_b_t<uint64_t>::n/mult_mul_table_logsize - 1; i++)
+    word res;
+    if constexpr(use_new_gen)
     {
-      t+= 1uLL << mult_mul_table_logsize;
-      ab_high >>= mult_mul_table_logsize;
-      m ^= t[ab_high&mask];
+      constexpr uint64_t poly = 0x1b; // x**64 = x**4 + x**3 + x + 1
+      // x**64 + x**4 + x**3 + x + 1 is primitive over GF(2)
+      // it is the minimal polynomial of the multiplicative generator
+
+      __m128i xa = _mm_set_epi64x(poly, a);
+      __m128i xb = _mm_set1_epi64x(b);
+      __m128i xc = _mm_clmulepi64_si128(xa, xb, 0x00);
+      __m128i xd = _mm_clmulepi64_si128(xa, xc, 0xff);
+      __m128i xe = _mm_clmulepi64_si128(xa, xd, 0xff);
+      __m128i xres = _mm_xor_si128(xc, xd);
+      xres = _mm_xor_si128(xres, xe);
+      res = xres[0];
     }
-    return ab_low^m;
+    else
+    {
+      __m128i xa = _mm_set1_epi64x(a);
+      __m128i xb = _mm_set1_epi64x(b);
+      __m128i xc = _mm_clmulepi64_si128(xa,xb, 0);
+
+      uint64_t ab_low = _mm_cvtsi128_si64(xc);     // lower 64 bits
+      uint64_t ab_high = _mm_extract_epi64(xc, 1); // upper 64 bits
+      uint64_t* t = m_mult_mul_table;
+      constexpr uint64_t mask = (1uLL << mult_mul_table_logsize) - 1;
+      uint64_t m = t[ab_high&mask];
+      for(unsigned int i = 0; i < c_b_t<uint64_t>::n/mult_mul_table_logsize - 1; i++)
+      {
+        t+= 1uLL << mult_mul_table_logsize;
+        ab_high >>= mult_mul_table_logsize;
+        m ^= t[ab_high&mask];
+      }
+      res = ab_low^m;
+    }
+    return res;
   }
   else
   {

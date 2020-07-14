@@ -2,6 +2,9 @@
 #include "additive_fft.h"
 #include "mateer_gao.h"
 #include "mateer_gao_alt.h"
+
+#include "mg.h"
+
 #include "utils.h"
 #include "polynomial_product.h"
 
@@ -53,7 +56,8 @@ static bool truncated_mateer_gao_dft_test(
     unsigned int num_sz,
     double* truncated_times,
     bool check_correctness,
-    bool benchmark, bool full);
+    bool benchmark,
+    bool full);
 static bool reverse_truncated_mateer_gao_dft_test(
     word* p_buffers,
     cantor_basis<word>& c,
@@ -62,10 +66,9 @@ static bool reverse_truncated_mateer_gao_dft_test(
     double* truncated_times,
     bool has_truncated_times,
     bool check_correctness,
-    bool benchmark, bool full);
-static bool mateer_gao_product_test(
-    word* p_buffers,
-    cantor_basis<word>& c,
+    bool benchmark,
+    bool full);
+static bool mateer_gao_product_test(word* p_buffers,
     unsigned int* log_sz,
     unsigned int num_sz,
     bool check_correctness,
@@ -123,12 +126,12 @@ int main(int UNUSED(argc), char** UNUSED(argv))
   {
     mateer_gao_error |= reverse_truncated_mateer_gao_dft_test(
           buffers, c, log_sz, num_sz, truncated_times, has_truncated_times,
-          check_correctness, benchmark, true);
+          check_correctness, benchmark, false);
   }
   if(run_tests[5])
   {
     mateer_gao_error |= mateer_gao_product_test(
-          buffers, c, log_sz, num_sz, check_correctness, benchmark);
+          buffers, log_sz, num_sz, check_correctness, benchmark);
   }
   if(mateer_gao_error) cout << "Some Mateer-Gao tests failed" << endl;
   error |= mateer_gao_error;
@@ -655,7 +658,7 @@ bool reverse_truncated_mateer_gao_dft_test(
 
       if(verbose) cout << "Computing reference values with reverse truncated VzGG DFT..." << endl;
       for(i = 0; i < sz; i++) buffer1[i] = refIn[i];
-      fft.additive_fft_rev_fast_in_place(buffer1, lsz, 0);
+      fft.additive_fft_rev_fast_in_place(buffer1, lsz, buffer2, 0);
       for( i = 0; i < check_sz; i++) refOut[i] = buffer1[i];
 
       if(full)
@@ -790,7 +793,6 @@ bool reverse_truncated_mateer_gao_dft_test(
 
 bool mateer_gao_product_test(
     word* p_buffers,
-    cantor_basis<word>& c,
     unsigned int* log_sz,
     unsigned int num_sz,
     bool check_correctness,
@@ -805,7 +807,7 @@ bool mateer_gao_product_test(
   unsigned int lsz;
   uint64_t degree;
   uint64_t sz;
-  additive_fft<word> fft(&c);
+  mateer_gao_polynomial_product mp;
   cout << endl << endl << "Mateer-Gao polynomial product test" << endl;
   // computing products of polynomials over f2 with mateer-gao fft and checking the result
   // with gf2x
@@ -848,7 +850,7 @@ bool mateer_gao_product_test(
             (unsigned long *) p3, (unsigned long *) p1, sz/(16*sizeof(unsigned long)),
             (unsigned long *) p2, sz/(16*sizeof(unsigned long)));
       // multiply polynomials with additive fft, put result in p4
-      binary_polynomial_multiply_alt<word>( &c, p1, p2, p4, buffer1, buffer2, sz/2 - 1, sz/2 - 1, dft_logsize);
+      mp.binary_polynomial_multiply(p1, p2, p4, buffer1, buffer2, sz/2 - 1, sz/2 - 1, dft_logsize);
       // compare results
       local_error = compare_results<uint8_t>(p3, p4, sz/8);
       error |= local_error;
@@ -877,7 +879,7 @@ bool mateer_gao_product_test(
       i = 0;
       do
       {
-        binary_polynomial_multiply_alt<word>(&c, p1, p2, p4, buffer1, buffer2, sz/2 - 1, sz/2 - 1, dft_logsize);
+        mp.binary_polynomial_multiply(p1, p2, p4, buffer1, buffer2, sz/2 - 1, sz/2 - 1, dft_logsize);
         i++;
       }
       while(absolute_time() <= t2 + 1);

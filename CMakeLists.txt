@@ -56,7 +56,7 @@ configure_file("defs.h.in" "defs.h")
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
 add_executable(cantor_basis_test "cantor_test.cpp" "libcantor/cantor_basis_bare.cpp" "libcantor/cantor_basis_full.cpp" "libcantor/helpers.cpp")
-add_executable(fft_test "fft_test.cpp" "libfft/utils.cpp" "libfft/additive_fft.cpp" "libcantor/cantor_basis_bare.cpp" "libcantor/cantor_basis_full.cpp" "libcantor/helpers.cpp")
+add_executable(fft_test "fft_test.cpp" "libfft/utils.cpp" "libfft/additive_fft.cpp" "libfft/mg.cpp" "libcantor/cantor_basis_bare.cpp" "libcantor/cantor_basis_full.cpp" "libcantor/helpers.cpp")
 
 if(Boost_FOUND)
   message("Using Boost for large integers")
