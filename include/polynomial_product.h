@@ -149,8 +149,9 @@ void words_to_binary_polynomial_mult_little_endian(uint8_t* buf, uint8_t* p, uin
  * @brief binary_polynomial_multiply
  * multiplication of binary polynomials using a fft of logsize 'logsize' in binary field whose
  * elements are words.
- * @param c_b cantor basis<word> needed by FFTs
- * @param
+ * @param c_b
+ * cantor basis<word> needed by FFTs
+ * @param p1
  * buffer with 1st polynomial, of degree d1. Buffer should be readable up to index i = d1 / 8.
  * @param p2
  * same for second polynomial, of degree d2. Buffer should be readable up to index i = d2 / 8.

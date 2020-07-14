@@ -772,7 +772,7 @@ bool mateer_gao_product_test(
             (unsigned long *) p3, (unsigned long *) p1, sz/(16*sizeof(unsigned long)),
             (unsigned long *) p2, sz/(16*sizeof(unsigned long)));
       // multiply polynomials with additive fft, put result in p4
-      mp.binary_polynomial_multiply(p1, p2, p4, buffer1, buffer2, sz/2 - 1, sz/2 - 1, dft_logsize);
+      mp.binary_polynomial_multiply(p1, p2, p4, sz/2 - 1, sz/2 - 1);
       // compare results
       local_error = compare_results<uint8_t>(p3, p4, sz/8);
       error |= local_error;
@@ -784,7 +784,7 @@ bool mateer_gao_product_test(
            << degree << ", in field of size 2**" << field_logsz << endl;
       t1 = absolute_time();
       i = 0;
-#if 1
+
       cout << "Performing product with gf2x" << endl;
       do
       {
@@ -796,12 +796,12 @@ bool mateer_gao_product_test(
       t1 = (absolute_time() - t1) / i;
       cout << "gf2x time: " << t1 << endl;
       cout << "Performing product with MG DFT" << endl;
-#endif
+
       t2 = absolute_time();
       i = 0;
       do
       {
-        mp.binary_polynomial_multiply(p1, p2, p4, buffer1, buffer2, sz/2 - 1, sz/2 - 1, dft_logsize);
+        mp.binary_polynomial_multiply(p1, p2, p4, sz/2 - 1, sz/2 - 1);
         i++;
       }
       while(absolute_time() <= t2 + 1);

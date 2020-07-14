@@ -263,10 +263,15 @@ static void contract(uint64_t* buf, uint8_t* p, uint64_t d)
 }
 
 void mateer_gao_polynomial_product::binary_polynomial_multiply(
-    uint8_t* p1, uint8_t* p2, uint8_t* result, uint64_t* b1, uint64_t* b2,
-    size_t d1, size_t d2, unsigned int logsize)
+    uint8_t* p1, uint8_t* p2, uint8_t* result, uint64_t d1, uint64_t d2)
 {
   constexpr unsigned int s = 6;
+  unsigned int logsize = 1;
+  while((1uLL<<logsize) * 32 < (d1 + d2 + 1)) logsize++;
+  uint64_t* b1 = new uint64_t[1uLL<<logsize];
+  unique_ptr<uint64_t[]> _1(b1);
+  uint64_t* b2 = new uint64_t[1uLL<<logsize];
+  unique_ptr<uint64_t[]> _2(b2);
   const size_t sz = (1uLL << logsize);
   uint64_t w1 = expand(p1, b1, d1, sz);
   uint64_t w2 = expand(p2, b2, d2, sz);
