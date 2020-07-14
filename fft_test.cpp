@@ -65,7 +65,8 @@ static bool reverse_truncated_mateer_gao_dft_test(
     bool check_correctness,
     bool benchmark,
     bool full);
-static bool mateer_gao_product_test(word* p_buffers,
+static bool mateer_gao_product_test(
+    word* p_buffers,
     unsigned int* log_sz,
     unsigned int num_sz,
     bool check_correctness,
