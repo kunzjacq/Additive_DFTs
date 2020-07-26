@@ -29,55 +29,117 @@ static inline uint64_t product(const uint64_t&a, const uint64_t&b)
   constexpr uint64_t minpoly = 0x1b; // x**64 = x**4 + x**3 + x + 1
   // x**64 + x**4 + x**3 + x + 1 is primitive over GF(2)
   // it is the minimal polynomial of the multiplicative generator
-  __m128i xa = _mm_set_epi64x(minpoly, a);
-  __m128i xb = _mm_set1_epi64x(b);
-  __m128i xc = _mm_clmulepi64_si128(xa, xb, 0x00);
-  __m128i xd = _mm_clmulepi64_si128(xa, xc, 0xff);
-  __m128i xe = _mm_clmulepi64_si128(xa, xd, 0xff);
-  __m128i xres = _mm_xor_si128(xc, xd);
-  xres = _mm_xor_si128(xres, xe);
-  return xres[0];
+  __m128i xa, xb, xc;
+  xa = _mm_set_epi64x(minpoly, a);
+  xb = _mm_set1_epi64x(b);
+  xb = _mm_clmulepi64_si128(xa, xb, 0x00);
+  xc = _mm_clmulepi64_si128(xa, xb, 0x11);
+  xb = _mm_xor_si128(xb, xc);
+  xc = _mm_clmulepi64_si128(xa, xc, 0x11);
+  xb = _mm_xor_si128(xb, xc);
+  return xb[0];
 }
 
-static inline void eval_degree1(const uint64_t val, const uint64_t stride, uint64_t* p)
+template<bool reverse>
+static inline void eval_degree1(const uint64_t val, const int logstride, uint64_t* p)
 {
   constexpr uint64_t minpoly = 0x1b; // x**64 = x**4 + x**3 + x + 1
   // x**64 + x**4 + x**3 + x + 1 is primitive over GF(2)
   // it is the minimal polynomial of the multiplicative generator
+
   __m128i xa = _mm_set_epi64x(minpoly, val);
-  for(uint64_t i = 0; i < stride; i++)
+  if(logstride == 0)
   {
-    // computes (u,v) where
-    // u = f_0 + f1 * w_{2.j},
-    // v = f_0 + f1 * w_{2.j+1} = f_0 + f1 *(w_{2.j} + 1) = u + f_1
-    // f_0 = poly[i], f_1 = poly[i + stride]
-    __m128i xb = _mm_set1_epi64x(p[i + stride]);
-    __m128i xc = _mm_clmulepi64_si128(xa, xb, 0x00);
-    __m128i xd = _mm_clmulepi64_si128(xa, xc, 0xff);
-    __m128i xe = _mm_clmulepi64_si128(xa, xd, 0xff);
-    __m128i xres = _mm_xor_si128(xc, xd);
-    xres = _mm_xor_si128(xres, xe);
-    p[i]          ^= xres[0];
-    p[i + stride] ^= p[i];
+    __m128i xb, xc;
+    if constexpr(reverse) p[1] ^= p[0];
+    xb = _mm_set1_epi64x(p[1]);
+    xb = _mm_clmulepi64_si128(xa, xb, 0x00);
+    xc = _mm_clmulepi64_si128(xa, xb, 0x11);
+    xb = _mm_xor_si128(xb, xc);
+    xc = _mm_clmulepi64_si128(xa, xc, 0x11);
+    xb = _mm_xor_si128(xb, xc);
+    p[0] ^= xb[0];
+    if constexpr(!reverse) p[1] ^= p[0];
+
   }
-}
-
-static inline void eval_degree1_reverse(const uint64_t val, const uint64_t stride, uint64_t* p)
-{
-  constexpr uint64_t minpoly = 0x1b; // x**64 = x**4 + x**3 + x + 1
-  // x**64 + x**4 + x**3 + x + 1 is primitive over GF(2)
-  // it is the minimal polynomial of the multiplicative generator
-  __m128i xa = _mm_set_epi64x(minpoly, val);
-  for(uint64_t i = 0; i < stride; i++)
+  else if (logstride == 1)
   {
-    p[i + stride] ^= p[i];
-    __m128i xb = _mm_set1_epi64x(p[i + stride]);
-    __m128i xc = _mm_clmulepi64_si128(xa, xb, 0x00);
-    __m128i xd = _mm_clmulepi64_si128(xa, xc, 0xff);
-    __m128i xe = _mm_clmulepi64_si128(xa, xd, 0xff);
-    __m128i xres = _mm_xor_si128(xc, xd);
-    xres = _mm_xor_si128(xres, xe);
-    p[i]          ^= xres[0];
+    __m128i xb1, xb2, xc1, xc2;
+    if constexpr(reverse)
+    {
+      p[2] ^= p[0];
+      p[3] ^= p[1];
+    }
+    xb1 = _mm_set1_epi64x(p[2]);
+    xb2 = _mm_set1_epi64x(p[3]);
+    xb1 = _mm_clmulepi64_si128(xa, xb1, 0x00);
+    xb2 = _mm_clmulepi64_si128(xa, xb2, 0x00);
+    xc1 = _mm_clmulepi64_si128(xa, xb1, 0x11);
+    xc2 = _mm_clmulepi64_si128(xa, xb2, 0x11);
+    xb1 = _mm_xor_si128(xb1, xc1);
+    xb2 = _mm_xor_si128(xb2, xc2);
+    xc1 = _mm_clmulepi64_si128(xa, xc1, 0x11);
+    xc2 = _mm_clmulepi64_si128(xa, xc2, 0x11);
+    xb1 = _mm_xor_si128(xb1, xc1);
+    xb2 = _mm_xor_si128(xb2, xc2);
+    p[0] ^= xb1[0];
+    p[1] ^= xb2[0];
+    if constexpr(!reverse)
+    {
+      p[2] ^= p[0];
+      p[3] ^= p[1];
+    }
+  }
+  else
+  {
+    const uint64_t stride = 1uLL << logstride;
+    for(uint64_t i = 0; i < stride; i += 4)
+    {
+
+      __m128i xb1, xb2, xb3, xb4, xc1, xc2, xc3, xc4;
+      if constexpr(reverse)
+      {
+        p[i + stride]     ^= p[i];
+        p[i + stride + 1] ^= p[i + 1];
+        p[i + stride + 2] ^= p[i + 2];
+        p[i + stride + 3] ^= p[i + 3];
+      }
+      xb1 = _mm_set1_epi64x(p[i + stride]);
+      xb2 = _mm_set1_epi64x(p[i + stride + 1]);
+      xb3 = _mm_set1_epi64x(p[i + stride + 2]);
+      xb4 = _mm_set1_epi64x(p[i + stride + 3]);
+      xb1 = _mm_clmulepi64_si128(xa, xb1, 0x00);
+      xb2 = _mm_clmulepi64_si128(xa, xb2, 0x00);
+      xb3 = _mm_clmulepi64_si128(xa, xb3, 0x00);
+      xb4 = _mm_clmulepi64_si128(xa, xb4, 0x00);
+      xc1 = _mm_clmulepi64_si128(xa, xb1, 0x11);
+      xc2 = _mm_clmulepi64_si128(xa, xb2, 0x11);
+      xc3 = _mm_clmulepi64_si128(xa, xb3, 0x11);
+      xc4 = _mm_clmulepi64_si128(xa, xb4, 0x11);
+      xb1 = _mm_xor_si128(xb1, xc1);
+      xb2 = _mm_xor_si128(xb2, xc2);
+      xb3 = _mm_xor_si128(xb3, xc3);
+      xb4 = _mm_xor_si128(xb4, xc4);
+      xc1 = _mm_clmulepi64_si128(xa, xc1, 0x11);
+      xc2 = _mm_clmulepi64_si128(xa, xc2, 0x11);
+      xc3 = _mm_clmulepi64_si128(xa, xc3, 0x11);
+      xc4 = _mm_clmulepi64_si128(xa, xc4, 0x11);
+      xb1 = _mm_xor_si128(xb1, xc1);
+      xb2 = _mm_xor_si128(xb2, xc2);
+      xb3 = _mm_xor_si128(xb3, xc3);
+      xb4 = _mm_xor_si128(xb4, xc4);
+      p[i]              ^= xb1[0];
+      p[i + 1]          ^= xb2[0];
+      p[i + 2]          ^= xb3[0];
+      p[i + 3]          ^= xb4[0];
+      if constexpr(!reverse)
+      {
+        p[i + stride]     ^= p[i];
+        p[i + stride + 1] ^= p[i + 1];
+        p[i + stride + 2] ^= p[i + 2];
+        p[i + stride + 3] ^= p[i + 3];
+      }
+    }
   }
 }
 
@@ -86,10 +148,9 @@ static inline uint64_t beta_to_mult(uint64_t w, const uint64_t* t)
   uint64_t res = 0;
   for(unsigned int byte_idx = 0; byte_idx < 8; byte_idx++)
   {
-    unsigned int bp = static_cast<unsigned int>(w & 0xFF);
-    if(bp) res ^= t[256*byte_idx + bp];
+    res ^= t[(byte_idx << 8) ^ (w & 0xFF)];
     w >>= 8;
-    if(w == 0) break;
+    if(w==0) break;
   }
   return res;
 }
@@ -112,10 +173,9 @@ inline void mg_aux(
 {
   if constexpr(s == 0)
   {
-    const uint64_t stride = 1uLL << logstride;
     const uint64_t val = beta_to_mult(offset, beta_table);
 #if 1
-    eval_degree1(val, stride, poly);
+    eval_degree1<false>(val, logstride, poly);
 #else
     for(uint64_t i = 0; i < stride; i++)
     {
@@ -193,10 +253,9 @@ void mg_reverse_aux(
 {
   if constexpr(s == 0)
   {
-    const uint64_t stride = 1uLL << logstride;
     const uint64_t val = beta_to_mult(offset, beta_table);
 #if 1
-    eval_degree1_reverse(val, stride, poly);
+    eval_degree1<true>(val, logstride, poly);
 #else
     for(uint64_t i = 0; i < stride; i++)
     {

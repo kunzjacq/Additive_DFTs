@@ -83,7 +83,7 @@ static bool decompose_taylor_test(
 int main(int UNUSED(argc), char** UNUSED(argv))
 {
   word* buffers = new word[allocated_buf_size];
-  unsigned int log_sz[] = {8, 16, 24, 26};
+  unsigned int log_sz[] = {20, 26, 30};
   unsigned int num_sz = sizeof(log_sz) / sizeof(unsigned int);
   bool error = false;
   double truncated_times[sizeof(log_sz) / 4];
@@ -725,7 +725,6 @@ bool mateer_gao_product_test(
   bool local_error, error = false;
   uint32_t field_logsz = c_b_t<word>::n;
 
-  word *buffer1 = nullptr, *buffer2 = nullptr;
   unsigned int lsz;
   uint64_t degree;
   uint64_t sz;
@@ -738,9 +737,7 @@ bool mateer_gao_product_test(
     lsz = log_sz[j];
     if(lsz > c_b_t<word>::n) continue;
     sz = 1uLL << lsz;
-    uint64_t dft_size = sz >> (c_b_t<word>::word_logsize - 1); // each word holds 2**(c_b_t<word>::logsize - 1) coefficients
-    unsigned int dft_logsize = lsz - (c_b_t<word>::word_logsize - 1);
-    uint64_t needed_buf_bitsize = sz*3 + 2*(dft_size << c_b_t<word>::word_logsize);
+    uint64_t needed_buf_bitsize = sz*3; // buffer size needed, in bits
     if(needed_buf_bitsize > (allocated_buf_size << c_b_t<word>::word_logsize))
     {
       cout << "Allocated buffer is too small for this test" << endl;
@@ -748,14 +745,10 @@ bool mateer_gao_product_test(
               "MB; allocated: " << (allocated_buf_size >>(23-c_b_t<word>::word_logsize))<< "MB" << endl;
       break; // assume sizes are increasing, therefore remaining tests are skipped as well
     }
-    // total buffer size needed : 2*sz words + 3/8*sz bytes =
-    // ((sz*3) >> c_b_t<word>::word_logsize) words + 2*sz
-    uint8_t* p1 = (uint8_t*) p_buffers; // size sz/16
-    uint8_t* p2 = p1 + sz/16; // size sz/16
-    uint8_t* p3 = p2 + sz/16; // size sz/8
-    uint8_t* p4 = p3 + sz/8;  // size sz/8
-    buffer1 = p_buffers + ((sz*3) >> c_b_t<word>::word_logsize); //size dft_size
-    buffer2 = buffer1 + dft_size; //size dft_size
+    uint8_t* p1 = (uint8_t*) p_buffers; // byte size sz/16
+    uint8_t* p2 = p1 + sz/16; // byte size sz/16
+    uint8_t* p3 = p2 + sz/16; // byte size sz/8
+    uint8_t* p4 = p3 + sz/8;  // byte size sz/8
     // create two random polynomials with sz/2 coefficients
     surand(5);
     for(size_t i = 0; i < sz / 16; i++)
