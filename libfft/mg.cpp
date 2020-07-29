@@ -5,7 +5,7 @@
 
 #include <immintrin.h>
 
-static constexpr uint64_t m_beta_over_mult[]={
+static constexpr uint64_t m_beta_over_mult[] = {
   0x1               , 0x19c9369f278adc02, 0xa181e7d66f5ff795, 0x447175c8e9f2810b,
   0x013b052fbd1cfb5d, 0xb7ea5a9705b771c0, 0x467698598926dc01, 0x1a9c05699898468f,
   0x109a9dd350b468b8, 0x184b3b707446faf8, 0xbd21077a71c52b4a, 0xfd4fb47b8220beec,
@@ -240,7 +240,7 @@ inline void mg_aux(
       // it is faster to recompute offset_prime in mult representation from its beta
       // representation than performing the equivalent of >> t directly on mult representation
       // which could be done by
-      // offset_mult_prime = sq_iter<t>(offset_mult) ^ offset_mult;
+      //offset_mult_prime = sq_iter<t>(offset_mult) ^ offset_mult;
       offset_mult_prime = beta_to_mult(offset >> t, beta_table);
       mg_aux<s - 1, logstride + t>(beta_table, mult_pow_table, poly, offset_prime, offset_mult_prime, logsize - t, false);
       offset_mult_prime = offset_mult;
@@ -250,12 +250,8 @@ inline void mg_aux(
         // at all times, offset_mult_prime = beta_to_mult(offset + (i << t), beta_table)
         offset_prime = offset ^ (i << t);
         mg_aux<s - 1, logstride>(beta_table, mult_pow_table, poly, offset_prime, offset_mult_prime, t, false);
-#if 0
-        offset_mult_prime ^= beta_to_mult((i^(i+1)) << t, beta_table);
-#else
         long int h = _mm_popcnt_u64(i^(i+1)); // i^(i+1) is a power of 2 - 1
         offset_mult_prime ^= mult_pow_table[h + t] ^ base;
-#endif
         poly += 1uLL << (t + logstride);
       }
     }
@@ -287,7 +283,9 @@ void mg_smalldegree(
 
   for(uint64_t i = 0; i < 1uLL << (logsize - logsizeprime); i++)
   {
-    mg_aux<s, 0>(beta_table, mult_pow_table, poly + (i << logsizeprime), i << logsizeprime, beta_to_mult(i << logsizeprime, beta_table), logsizeprime, true);
+    uint64_t offset = i << logsizeprime;
+    uint64_t offset_mult = beta_to_mult(i << logsizeprime, beta_table);
+    mg_aux<s, 0>(beta_table, mult_pow_table, poly + (i << logsizeprime), offset, offset_mult, logsizeprime, true);
   }
 }
 
@@ -322,19 +320,17 @@ void mg_reverse_aux(
       uint64_t base = mult_pow_table[t];
       for(uint64_t i = 0; i < tau; i++)
       {
-        // at all times, offset_mult_prime = beta_to_mult(offset_prime, beta_table)
+        // at all times, offset_mult_prime = beta_to_mult(offset ^ (i << t), beta_table)
         offset_prime = offset ^ (i << t);
         mg_reverse_aux<s - 1, logstride>(beta_table, mult_pow_table, poly_loc, offset_prime, offset_mult_prime, t);
-#if 0
-        offset_mult_prime ^= beta_to_mult((i^(i+1)) << t, beta_table);
-#else
         long int h = _mm_popcnt_u64(i^(i+1));
         offset_mult_prime ^= mult_pow_table[h+t] ^ base;
-#endif
         poly_loc += row_size;
       }
       // reverse fft on columns
-      mg_reverse_aux<s - 1, logstride + t>(beta_table, mult_pow_table, poly, offset >> t, beta_to_mult(offset >> t, beta_table), logsize - t);
+      //offset_mult_prime = sq_iter<t>(offset_mult) ^ offset_mult;
+      offset_mult_prime = beta_to_mult(offset >> t, beta_table);
+      mg_reverse_aux<s - 1, logstride + t>(beta_table, mult_pow_table, poly, offset >> t, offset_mult_prime, logsize - t);
       decompose_taylor_reverse_iterative_alt(logstride, 2 * t, t, eta, poly);
     }
   }
