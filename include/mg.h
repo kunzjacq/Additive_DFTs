@@ -5,6 +5,7 @@
 
 class mateer_gao_polynomial_product{
     uint64_t* m_beta_to_mult_table;
+    uint64_t* m_mult_beta_pow_table;
 public:
   mateer_gao_polynomial_product();
   ~mateer_gao_polynomial_product();

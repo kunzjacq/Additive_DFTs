@@ -40,6 +40,49 @@ static inline uint64_t product(const uint64_t&a, const uint64_t&b)
   return xb[0];
 }
 
+template<unsigned int iter>
+static inline uint64_t sq_iter(const uint64_t&a)
+{
+  constexpr uint64_t minpoly = 0x1b; // see 'product'
+  __m128i xp, xa, xc;
+  xp = _mm_set1_epi64x(minpoly);
+  xa = _mm_set1_epi64x(a);
+  for(unsigned int i = 0; i < iter; i++)
+  {
+    xa = _mm_clmulepi64_si128(xa, xa, 0x00);
+    xc = _mm_clmulepi64_si128(xp, xa, 0x10);
+    xa = _mm_xor_si128(xa, xc);
+    xc = _mm_clmulepi64_si128(xp, xc, 0x10);
+    xa = _mm_xor_si128(xa, xc);
+  }
+  return xa[0];
+}
+
+
+/**
+ with
+ const uint64_t stride = 1uLL << logstride;
+
+ * if (!reverse), equivalent to
+
+ for(uint64_t i = 0; i < stride; i++)
+ {
+   // computes (u,v) where
+   // u = f_0 + f1 * w,
+   // v = f_0 + f1 * (w + 1) = u + f_1
+   // f_0 = poly[i], f_1 = p[i + stride]
+   p[i]          ^= product(p[i + stride], val);
+   p[i + stride] ^= p[i];
+  }
+
+  * if(reverse), performs the reverse operation, i.e.
+  for(uint64_t i = 0; i < stride; i++)
+  {
+   p[i + stride] ^= p[i];
+   p[i]          ^= product(p[i + stride], val);
+  }
+
+ */
 template<bool reverse, int logstride>
 static inline void eval_degree1(const uint64_t val, uint64_t* p)
 {
@@ -146,11 +189,11 @@ static inline void eval_degree1(const uint64_t val, uint64_t* p)
 static inline uint64_t beta_to_mult(uint64_t w, const uint64_t* t)
 {
   uint64_t res = 0;
-  for(unsigned int byte_idx = 0; byte_idx < 8; byte_idx++)
+  for(unsigned int byte_idx = 0; byte_idx < 4; byte_idx++)
   {
     res ^= t[(byte_idx << 8) ^ (w & 0xFF)];
     w >>= 8;
-    if(w==0) break;
+    if(w == 0) break;
   }
   return res;
 }
@@ -163,36 +206,25 @@ static inline uint64_t beta_to_mult(uint64_t w, const uint64_t* t)
 template <int s, int logstride>
 inline void mg_aux(
     uint64_t* beta_table,
+    uint64_t* mult_pow_table,
     uint64_t* poly,
     uint64_t offset,
+    uint64_t offset_mult,
     unsigned int logsize,
-    bool first_taylor_done = false)
+    bool first_taylor_done)
 // log2 size of each stride to be processed;
 // should be <= 2**s, the input is assumed to be of size 2**logsize and only the 2**logsize first output values are computed
 {
   if constexpr(s == 0)
   {
-    const uint64_t val = beta_to_mult(offset, beta_table);
-#if 1
-    eval_degree1<false, logstride>(val, poly);
-#else
-    for(uint64_t i = 0; i < stride; i++)
-    {
-      // computes (u,v) where
-      // u = f_0 + f1 * w_{2.j},
-      // v = f_0 + f1 * w_{2.j+1} = f_0 + f1 *(w_{2.j} + 1) = u + f_1
-      // f_0 = poly[i], f_1 = poly[i + stride]
-      poly[i]          ^= product(poly[i + stride], val);
-      poly[i + stride] ^= poly[i];
-    }
-#endif
+    eval_degree1<false, logstride>(offset_mult, poly);
   }
   else
   {
     constexpr unsigned int t = 1 << (s - 1);
     if(logsize <= t)
     {
-      mg_aux<s - 1, logstride>(beta_table, poly, offset, logsize, first_taylor_done);
+      mg_aux<s - 1, logstride>(beta_table, mult_pow_table, poly, offset, offset_mult, logsize, first_taylor_done);
     }
     else
     {
@@ -203,12 +235,28 @@ inline void mg_aux(
       // fft on columns
       // if logsize >= t, each fft should process 2**(logsize - t) values
       // i.e. logsize' = logsize - t
-      mg_aux<s - 1, logstride + t>(beta_table, poly, offset >> t, logsize - t, false);
-      const uint64_t row_size = 1uLL << (t + logstride);
+      uint64_t offset_prime, offset_mult_prime;
+      offset_prime = offset >> t;
+      // it is faster to recompute offset_prime in mult representation from its beta
+      // representation than performing the equivalent of >> t directly on mult representation
+      // which could be done by
+      // offset_mult_prime = sq_iter<t>(offset_mult) ^ offset_mult;
+      offset_mult_prime = beta_to_mult(offset >> t, beta_table);
+      mg_aux<s - 1, logstride + t>(beta_table, mult_pow_table, poly, offset_prime, offset_mult_prime, logsize - t, false);
+      offset_mult_prime = offset_mult;
+      uint64_t base = mult_pow_table[t];
       for(uint64_t i = 0; i < tau; i++)
       {
-        mg_aux<s - 1, logstride>(beta_table, poly, offset + (i << t), t, false);
-        poly += row_size;
+        // at all times, offset_mult_prime = beta_to_mult(offset + (i << t), beta_table)
+        offset_prime = offset ^ (i << t);
+        mg_aux<s - 1, logstride>(beta_table, mult_pow_table, poly, offset_prime, offset_mult_prime, t, false);
+#if 0
+        offset_mult_prime ^= beta_to_mult((i^(i+1)) << t, beta_table);
+#else
+        long int h = _mm_popcnt_u64(i^(i+1)); // i^(i+1) is a power of 2 - 1
+        offset_mult_prime ^= mult_pow_table[h + t] ^ base;
+#endif
+        poly += 1uLL << (t + logstride);
       }
     }
   }
@@ -216,6 +264,7 @@ inline void mg_aux(
 
 void mg_smalldegree(
     uint64_t* beta_table,
+    uint64_t* mult_pow_table,
     uint64_t* poly, // of degree < 2**logsize_prime
     unsigned int logsizeprime, // <= logsize
     unsigned int logsize
@@ -238,36 +287,29 @@ void mg_smalldegree(
 
   for(uint64_t i = 0; i < 1uLL << (logsize - logsizeprime); i++)
   {
-    mg_aux<s, 0>(beta_table, poly + (i << logsizeprime), i << logsizeprime, logsizeprime, true);
+    mg_aux<s, 0>(beta_table, mult_pow_table, poly + (i << logsizeprime), i << logsizeprime, beta_to_mult(i << logsizeprime, beta_table), logsizeprime, true);
   }
 }
 
 template <int s, int logstride>
 void mg_reverse_aux(
     uint64_t* beta_table,
+    uint64_t* mult_pow_table,
     uint64_t* poly,
     uint64_t offset,
+    uint64_t offset_mult,
     unsigned int logsize)
 {
   if constexpr(s == 0)
   {
-    const uint64_t val = beta_to_mult(offset, beta_table);
-#if 1
-    eval_degree1<true, logstride>(val, poly);
-#else
-    for(uint64_t i = 0; i < stride; i++)
-    {
-      poly[i + stride] ^= poly[i];
-      poly[i]          ^= product(poly[i + stride], val);
-    }
-#endif
+    eval_degree1<true, logstride>(offset_mult, poly);
   }
   else
   {
     constexpr unsigned int t = 1 << (s - 1);
     if(logsize <= t)
     {
-      mg_reverse_aux<s - 1, logstride>(beta_table, poly, offset, logsize);
+      mg_reverse_aux<s - 1, logstride>(beta_table, mult_pow_table, poly, offset, offset_mult, logsize);
     }
     else
     {
@@ -275,13 +317,24 @@ void mg_reverse_aux(
       const uint64_t eta   = 1uLL << logsize;
       const uint64_t row_size = 1uLL << (t + logstride);
       uint64_t* poly_loc = poly;
+      uint64_t offset_prime = offset;
+      uint64_t offset_mult_prime = offset_mult;
+      uint64_t base = mult_pow_table[t];
       for(uint64_t i = 0; i < tau; i++)
       {
-        mg_reverse_aux<s - 1, logstride>(beta_table, poly_loc, offset + (i << t), t);
+        // at all times, offset_mult_prime = beta_to_mult(offset_prime, beta_table)
+        offset_prime = offset ^ (i << t);
+        mg_reverse_aux<s - 1, logstride>(beta_table, mult_pow_table, poly_loc, offset_prime, offset_mult_prime, t);
+#if 0
+        offset_mult_prime ^= beta_to_mult((i^(i+1)) << t, beta_table);
+#else
+        long int h = _mm_popcnt_u64(i^(i+1));
+        offset_mult_prime ^= mult_pow_table[h+t] ^ base;
+#endif
         poly_loc += row_size;
       }
       // reverse fft on columns
-      mg_reverse_aux<s - 1, logstride + t>(beta_table, poly, offset >> t, logsize - t);
+      mg_reverse_aux<s - 1, logstride + t>(beta_table, mult_pow_table, poly, offset >> t, beta_to_mult(offset >> t, beta_table), logsize - t);
       decompose_taylor_reverse_iterative_alt(logstride, 2 * t, t, eta, poly);
     }
   }
@@ -334,17 +387,19 @@ void mateer_gao_polynomial_product::binary_polynomial_multiply(
   uint64_t w2 = expand(p2, b2, d2, sz);
   int logsizeprime = logsize;
   while(1uLL << logsizeprime >= 2 * w1) logsizeprime--;
-  mg_smalldegree(m_beta_to_mult_table, b1, logsizeprime, logsize);
+  mg_smalldegree(m_beta_to_mult_table, m_mult_beta_pow_table, b1, logsizeprime, logsize);
   logsizeprime = logsize;
   while(1uLL << logsizeprime >= 2 * w2) logsizeprime--;
-  mg_smalldegree(m_beta_to_mult_table, b2, logsizeprime, logsize);
+  mg_smalldegree(m_beta_to_mult_table, m_mult_beta_pow_table, b2, logsizeprime, logsize);
   for(size_t i = 0; i < sz; i++) b1[i] = product(b1[i], b2[i]);
-  mg_reverse_aux<s,0>(m_beta_to_mult_table, b1, 0, logsize);
+  mg_reverse_aux<s,0>(m_beta_to_mult_table, m_mult_beta_pow_table, b1, 0, 0, logsize);
   contract(b1, result, d1 + d2);
 }
 
 mateer_gao_polynomial_product::mateer_gao_polynomial_product():
-  m_beta_to_mult_table(new uint64_t[256*8])
+  m_beta_to_mult_table(new uint64_t[256*8]),
+  m_mult_beta_pow_table(new uint64_t[64])
+
 {
   for(unsigned int byte_idx = 0; byte_idx < 8; byte_idx++)
   {
@@ -356,10 +411,17 @@ mateer_gao_polynomial_product::mateer_gao_polynomial_product():
       m_beta_to_mult_table[256*byte_idx + b] = im_w;
     }
   }
+  m_mult_beta_pow_table[0] = 0;
+  for(int i = 1; i < 64; i++)
+  {
+    m_mult_beta_pow_table[i] = m_mult_beta_pow_table[i-1]^m_beta_over_mult[i-1];
+  }
 }
 
 mateer_gao_polynomial_product::~mateer_gao_polynomial_product()
 {
   delete[] m_beta_to_mult_table;
   m_beta_to_mult_table = nullptr;
+  delete[] m_mult_beta_pow_table;
+  m_mult_beta_pow_table = nullptr;
 }
