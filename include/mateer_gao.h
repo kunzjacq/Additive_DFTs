@@ -33,7 +33,7 @@ void fft_aux_ref(
     constexpr unsigned int t = 1   << (s - 1);
     const uint64_t tau   = 1uLL <<  t;
     const uint64_t eta   = 1uLL << (2 * t);
-    decompose_taylor(logstride, 2 * t, t, eta, poly);
+    decompose_taylor_recursive(logstride, 2 * t, t, eta, poly);
     // on input: there are 'stride' series of size 'eta' = 'tau' * 'tau';
     // elt k of series i is in poly[i + stride * k].
     // do fft on columns.

@@ -62,7 +62,6 @@ inline void decompose_taylor_one_step(
     word* poly)
 {
   const uint64_t delta_s      = delta      << logstride;
-  const uint64_t n_s          = n          << logstride;
   const uint64_t m_s          = (n >> 1)   << logstride;
   const uint64_t num_coeffs_s = num_coeffs << logstride;
 #ifdef CHECK
@@ -80,6 +79,8 @@ inline void decompose_taylor_one_step(
   // add f_a * x**delta
   // only impacts lower part (d < m)
   // n - 2 * delta >= 0 : write position is below read position
+  // and strictly below read position  provided tau > 1, which is always the case when this
+  // function is used
   for(uint64_t d = n - delta; d < num_coeffs; d++)
   {
     poly[delta + (d - (n - delta))] ^= poly[d];
@@ -97,14 +98,16 @@ inline void decompose_taylor_one_step(
   // delta <= m : write position is below read position
   for(uint64_t d = n - delta; d < num_coeffs; d++)
   {
-    // m + d - (2*m - delta) = d + delta - m
+    // m + d - (2*m - delta) = d - m + delta
     poly[d - m + delta] ^= poly[d];
   }
-  */
 
-  word* __restrict__ p1 = poly + delta_s;
-  word* __restrict__ p2 = poly + (n_s - delta_s);
-  word* __restrict__ p3 = poly + m_s;
+  on interleaved inputs, this can be written as
+
+  const uint64_t n_s = n << logstride;
+  word* p1 = poly + delta_s;
+  word* p2 = poly + (n_s - delta_s);
+  word* p3 = poly + m_s;
   // if num_coeffs is a power of 2 (num_coeffs = n), line below reduces to num_iter = delta_s
   const size_t num_iter_a = max(n_s - delta_s, num_coeffs_s) - (n_s - delta_s);
   // if num_coeffs is a power of 2 (num_coeffs = n), line below reduces to num_iter = m_s
@@ -112,6 +115,14 @@ inline void decompose_taylor_one_step(
   for(uint64_t i = 0; i < num_iter_a; i++) p1[i] ^= p2[i];
   for(uint64_t i = 0; i < num_iter_b; i++) p1[i] ^= p3[i];
   for(uint64_t i = 0; i < num_iter_a; i++) p3[i] ^= p2[i];
+
+  // however, it is even simpler to reverse the order of the single loop for the reverse function
+  // to obtain the form below:
+  */
+
+  uint64_t* p2 = poly + delta_s - m_s;
+  // m_s > 0, hence the loop below is not infinite
+  for(size_t i = num_coeffs_s - 1; i > m_s - 1; i--) p2[i] ^= poly[i];
 
 #ifdef CHECK
   const uint64_t m = (n >> 1);
@@ -157,7 +168,8 @@ inline void decompose_taylor_one_step_reverse(
   const uint64_t delta_s      = delta      << logstride;
   const uint64_t m_s          = (n >> 1)   << logstride;
   const uint64_t num_coeffs_s = num_coeffs << logstride;
-  for(size_t i = m_s; i < num_coeffs_s; i++) poly[i - m_s + delta_s] ^= poly[i];
+  uint64_t* p2 = poly + delta_s - m_s;
+  for(size_t i = m_s; i < num_coeffs_s; i++) p2[i] ^= poly[i];
 }
 
 // tau >= 2
@@ -192,8 +204,119 @@ void decompose_taylor_recursive(
   {
     decompose_taylor_recursive(logstride, logblocksize, logtau, num_coeffs_high, poly + (m<<logstride));
   }
-
 }
+
+template<class word>
+void decompose_taylor_reverse_recursive(
+    unsigned int logstride,
+    unsigned int logblocksize,
+    unsigned int logtau,
+    uint64_t num_coeffs,
+    word* poly)
+{
+  uint64_t tau = 1uLL << logtau;
+  if(num_coeffs <= tau) return; // nothing to do
+  unsigned int logn = logblocksize;
+  while((1uLL << logn) >= (2 * num_coeffs)) logn--;
+  // we want 2**logn >= num_coeffs, 2**(logn-1) < num_coeffs
+  uint64_t n = 1uLL << logn;
+  uint64_t m = 1uLL << (logn - 1);
+  assert(n >= num_coeffs);
+  assert(m < num_coeffs);
+  uint64_t delta = 1uLL << (logn - 1 - logtau);
+  // the order of the additions below is chosen so that
+  // values are used before they are modified
+  const uint64_t num_coeffs_high = num_coeffs - m;
+  const uint64_t num_coeffs_low  = m;
+  if(num_coeffs_high > tau)
+  {
+    decompose_taylor_reverse_recursive(logstride, logblocksize, logtau, num_coeffs_high, poly + (m<<logstride));
+  }
+  if(num_coeffs_low  > tau)
+  {
+    decompose_taylor_reverse_recursive(logstride, logblocksize, logtau, num_coeffs_low, poly);
+  }
+  decompose_taylor_one_step_reverse<word>(logstride, num_coeffs, delta, n, poly);
+}
+
+template<class word>
+void decompose_taylor_iterative(
+    unsigned int logstride,
+    unsigned int logblocksize,
+    unsigned int logtau,
+    uint64_t num_coeffs,
+    word* poly)
+{
+  if(num_coeffs <= (1uLL << logtau)) return; // nothing to do
+  unsigned int logn = logblocksize;
+  while((1uLL << logn) >= (2 * num_coeffs)) logn--;
+  for(unsigned int interval_logsize = logn; interval_logsize > logtau; interval_logsize--)
+  {
+    const size_t n = 1uLL << interval_logsize;
+    const uint64_t num_coeffs_rounded = num_coeffs & (~(n - 1));
+    const uint64_t delta = 1uLL << (interval_logsize - 1 - logtau);
+    for(size_t interval_start = 0; interval_start < num_coeffs_rounded; interval_start += n)
+    {
+      decompose_taylor_one_step<word>(
+            logstride,
+            n,
+            delta,
+            n,
+            poly + (interval_start << logstride));
+    }
+    // last incomplete interval
+    uint64_t interval_length = num_coeffs - num_coeffs_rounded;
+    if(interval_length > (n >> 1))
+    {
+      decompose_taylor_one_step<word>(
+            logstride,
+            interval_length,
+            delta,
+            n,
+            poly + (num_coeffs_rounded << logstride));
+    }
+  }
+}
+
+template<class word>
+void decompose_taylor_reverse_iterative(
+    unsigned int logstride,
+    unsigned int logblocksize,
+    unsigned int logtau,
+    uint64_t num_coeffs,
+    word* poly)
+{
+  if(num_coeffs <= (1uLL << logtau)) return; // nothing to do
+  unsigned int logn = logblocksize;
+  while((1uLL << logn) >= (2 * num_coeffs)) logn--;
+  for(unsigned int interval_logsize = logtau + 1; interval_logsize <= logn; interval_logsize++)
+  {
+    const size_t n = 1uLL << interval_logsize;
+    const uint64_t num_coeffs_rounded = num_coeffs & (~(n - 1));
+    const uint64_t delta = 1uLL << (interval_logsize - 1 - logtau);
+    for(size_t interval_start = 0; interval_start < num_coeffs_rounded; interval_start += n)
+    {
+      decompose_taylor_one_step_reverse <word> (
+            logstride,
+            n,
+            delta,
+            n,
+            poly + (interval_start << logstride));
+    }
+    // last incomplete interval
+    uint64_t interval_length = num_coeffs - num_coeffs_rounded;
+    if(interval_length > (n >> 1))
+    {
+      decompose_taylor_one_step_reverse <word> (
+            logstride,
+            interval_length,
+            delta,
+            n,
+            poly + (num_coeffs_rounded << logstride));
+    }
+  }
+}
+
 
 template<class word>
 void decompose_taylor_iterative_alt(
@@ -239,10 +362,11 @@ void decompose_taylor_iterative_alt(
       if(is_full_lowest_depth == -1) while((1uLL << local_logn) >= (2 * local_num_coeffs)) local_logn--;
       uint64_t local_delta = 1uLL << (local_logn - 1 - logtau); // 2**delta = m/tau
       const uint64_t delta_s      = local_delta;
-      const uint64_t n_s          = 1uLL             << local_logn;
+      const uint64_t n_s          = 1uLL << local_logn;
       const uint64_t num_coeffs_s = local_num_coeffs;
       const uint64_t m_s          = n_s >> 1;
       word* local_poly = poly + (left_bound << logstride);
+#if 0
       word* p1 = local_poly + delta_s;
       word* p2 = local_poly + (n_s - delta_s);
       word* p3 = local_poly + m_s;
@@ -251,6 +375,10 @@ void decompose_taylor_iterative_alt(
       for(uint64_t i = 0; i < num_iter_a; i++) p1[i] ^= p2[i];
       for(uint64_t i = 0; i < num_iter_b; i++) p1[i] ^= p3[i];
       for(uint64_t i = 0; i < num_iter_a; i++) p3[i] ^= p2[i];
+#else
+      word* p2 = local_poly - m_s + delta_s;
+      for(uint64_t i = num_coeffs_s -1; i> m_s - 1; i--) p2[i] ^= local_poly[i];
+#endif
 #endif
 
       //then descend in the left subtree if we are not already at a leaf
@@ -547,113 +675,3 @@ void decompose_taylor_iterative_alt2(
 }
 
 
-template<class word>
-void decompose_taylor_reverse_recursive(
-    unsigned int logstride,
-    unsigned int logblocksize,
-    unsigned int logtau,
-    uint64_t num_coeffs,
-    word* poly)
-{
-  uint64_t tau = 1uLL << logtau;
-  if(num_coeffs <= tau) return; // nothing to do
-  unsigned int logn = logblocksize;
-  while((1uLL << logn) >= (2 * num_coeffs)) logn--;
-  // we want 2**logn >= num_coeffs, 2**(logn-1) < num_coeffs
-  uint64_t n = 1uLL << logn;
-  uint64_t m = 1uLL << (logn - 1);
-  assert(n >= num_coeffs);
-  assert(m < num_coeffs);
-  uint64_t delta = 1uLL << (logn - 1 - logtau);
-  // the order of the additions below is chosen so that
-  // values are used before they are modified
-  const uint64_t num_coeffs_high = num_coeffs - m;
-  const uint64_t num_coeffs_low  = m;
-  if(num_coeffs_high > tau)
-  {
-    decompose_taylor_reverse_recursive(logstride, logblocksize, logtau, num_coeffs_high, poly + (m<<logstride));
-  }
-  if(num_coeffs_low  > tau)
-  {
-    decompose_taylor_reverse_recursive(logstride, logblocksize, logtau, num_coeffs_low, poly);
-  }
-  decompose_taylor_one_step_reverse<word>(logstride, num_coeffs, delta, n, poly);
-}
-
-template<class word>
-void decompose_taylor(
-    unsigned int logstride,
-    unsigned int logblocksize,
-    unsigned int logtau,
-    uint64_t num_coeffs,
-    word* poly)
-{
-  if(num_coeffs <= (1uLL << logtau)) return; // nothing to do
-  unsigned int logn = logblocksize;
-  while((1uLL << logn) >= (2 * num_coeffs)) logn--;
-  for(unsigned int interval_logsize = logn; interval_logsize > logtau; interval_logsize--)
-  {
-    const size_t n = 1uLL << interval_logsize;
-    const uint64_t num_coeffs_rounded = num_coeffs & (~(n - 1));
-    const uint64_t delta = 1uLL << (interval_logsize - 1 - logtau);
-    for(size_t interval_start = 0; interval_start < num_coeffs_rounded; interval_start += n)
-    {
-      decompose_taylor_one_step<word>(
-            logstride,
-            n,
-            delta,
-            n,
-            poly + (interval_start << logstride));
-    }
-    // last incomplete interval
-    uint64_t interval_length = num_coeffs - num_coeffs_rounded;
-    if(interval_length > (n >> 1))
-    {
-      decompose_taylor_one_step<word>(
-            logstride,
-            interval_length,
-            delta,
-            n,
-            poly + (num_coeffs_rounded << logstride));
-    }
-  }
-}
-
-template<class word>
-void decompose_taylor_reverse(
-    unsigned int logstride,
-    unsigned int logblocksize,
-    unsigned int logtau,
-    uint64_t num_coeffs,
-    word* poly)
-{
-  if(num_coeffs <= (1uLL << logtau)) return; // nothing to do
-  unsigned int logn = logblocksize;
-  while((1uLL << logn) >= (2 * num_coeffs)) logn--;
-  for(unsigned int interval_logsize = logtau + 1; interval_logsize <= logn; interval_logsize++)
-  {
-    const size_t n = 1uLL << interval_logsize;
-    const uint64_t num_coeffs_rounded = num_coeffs & (~(n - 1));
-    const uint64_t delta = 1uLL << (interval_logsize - 1 - logtau);
-    for(size_t interval_start = 0; interval_start < num_coeffs_rounded; interval_start += n)
-    {
-      decompose_taylor_one_step_reverse <word> (
-            logstride,
-            n,
-            delta,
-            n,
-            poly + (interval_start << logstride));
-    }
-    // last incomplete interval
-    uint64_t interval_length = num_coeffs - num_coeffs_rounded;
-    if(interval_length > (n >> 1))
-    {
-      decompose_taylor_one_step_reverse <word> (
-            logstride,
-            interval_length,
-            delta,
-            n,
-            poly + (num_coeffs_rounded << logstride));
-    }
-  }
-}

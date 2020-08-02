@@ -996,7 +996,7 @@ bool decompose_taylor_test(
 
       decompose_taylor_recursive(logstride, logblocksize, logtau, sz, p_buffers);
       // compare output of decompose_taylor_iterative to output of decompose_taylor
-      decompose_taylor(logstride, logblocksize, logtau, sz, copy);
+      decompose_taylor_iterative(logstride, logblocksize, logtau, sz, copy);
       if(memcmp(p_buffers, copy, (sz << logstride) * sizeof(word))) error = true;
 
       decompose_taylor_reverse_recursive(logstride, logblocksize, logtau, sz, p_buffers);
@@ -1022,7 +1022,7 @@ bool decompose_taylor_test(
     decompose_taylor_recursive(0, logblocksize, logtau, large_sz, copy);
     t2 = absolute_time();
     t1 = t2 - t1;
-    decompose_taylor(0, logblocksize, logtau, large_sz, p_buffers);
+    decompose_taylor_iterative(0, logblocksize, logtau, large_sz, p_buffers);
     t2 = absolute_time() - t2;
     cout << "Iterative time: " << t2 << endl;
     cout << "Recursive time: " << t1 << endl;
@@ -1033,7 +1033,7 @@ bool decompose_taylor_test(
     decompose_taylor_reverse_recursive(0, logblocksize, logtau, large_sz, copy);
     t2 = absolute_time();
     t1 = t2 - t1;
-    decompose_taylor_reverse(0, logblocksize, logtau, large_sz, p_buffers);
+    decompose_taylor_reverse_iterative(0, logblocksize, logtau, large_sz, p_buffers);
     t2 = absolute_time() - t2;
     cout << "Iterative time: " << t2 << endl;
     cout << "Recursive time: " << t1 << endl;

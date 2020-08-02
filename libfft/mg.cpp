@@ -5,6 +5,10 @@
 
 #include <immintrin.h>
 
+/**
+  m_beta_over_mult[i] = beta_i in multplicative representation, i.e. in GF(2**64) as descibed in
+  function 'product'. beta_i refers to the beta basis in mateer-gao algorithm.
+  */
 static constexpr uint64_t m_beta_over_mult[] = {
   0x1               , 0x19c9369f278adc02, 0xa181e7d66f5ff795, 0x447175c8e9f2810b,
   0x013b052fbd1cfb5d, 0xb7ea5a9705b771c0, 0x467698598926dc01, 0x1a9c05699898468f,
@@ -24,6 +28,15 @@ static constexpr uint64_t m_beta_over_mult[] = {
   0x46fbb34fb404e77d, 0x1ea01f4ba902109e, 0x0d8989c26ace34e6, 0x8b7f48848818e45c
 };
 
+/**
+ * @brief product
+ * × in GF(2**64), implemented with element u of minimal polynomial x**64 - x**4 + x**3 + x + 1.
+ * 1 is represented by 0x1, u by 0x2.
+ * returns a × b.
+ * @param a
+ * @param b
+ * @return
+ */
 static inline uint64_t product(const uint64_t&a, const uint64_t&b)
 {
   constexpr uint64_t minpoly = 0x1b; // x**64 = x**4 + x**3 + x + 1
@@ -40,10 +53,17 @@ static inline uint64_t product(const uint64_t&a, const uint64_t&b)
   return xb[0];
 }
 
+/**
+* @brief sq_iter
+* Iterated squaring in GF(2**64). See 'product'.
+* returns 'a' squared 'iter' times.
+* @param a
+* @return (...(a**2)**2...)**2, with 'iter' squarings.
+*/
 template<unsigned int iter>
 static inline uint64_t sq_iter(const uint64_t&a)
 {
-  constexpr uint64_t minpoly = 0x1b; // see 'product'
+  constexpr uint64_t minpoly = 0x1b;
   __m128i xp, xa, xc;
   xp = _mm_set1_epi64x(minpoly);
   xa = _mm_set1_epi64x(a);
@@ -187,10 +207,27 @@ static inline void eval_degree1(const uint64_t val, uint64_t* p)
 }
 
 /**
- * computes the 2**logsize first values of 2**logstride interleaved polynomials on input
- * with <= 2**logsize coefficients
- * i.e. performs 2**logstride interleaved partial DFTS
- * in-place on an array of size 2**(logstride+logsize)
+  @brief mg_aux
+ * computes the 2**logsize first values of 2**logstride interleaved polynomials given on input,
+ * each with <= 2**logsize coefficients; i.e. performs 2**logstride interleaved partial DFTS.
+ * processing is done in-place on an array of size 2**(logstride + logsize).
+ * Output values computed correspond to input values whose beta representation is
+ * offset ^ i, i=0 ... 2**logsize - 1, and offset is a multiple of 2**logsize.
+ * the multiplicative representation of 'offset' is in offsets_mult[0] (see below).
+ * @param mult_pow_table
+ * mult_pow_table[i], i < 2**s, contains the value 2**(i+1) - 1 in beta representation.
+ * (i.e. i consecutive bits set to 1 starting from 0) converted to multiplicative representation.
+ * @param poly
+ * the interleaved polynomials to process, in multiplivative representation,
+ * with 2**logsize coefficients each.
+ * @param offsets_mult
+ * offsets_mult[0] is the offset 'offset' of the values computed in beta representation,
+ * converted to multiplicative representation.
+ * offsets_mult[j], j < 2**s, is (offset >> j) converted to multplicative representation.
+ * @param logsize the log2-size of the interval of values processed for each polynomial.
+ * @param first_taylor done
+ * if true, the first taylor expansion to perform is skipped. enables an optimization when
+ * the polynomial to process has small degree; see mg_smalldegree.
  */
 template <int s, int logstride>
 inline void mg_aux(
@@ -218,7 +255,7 @@ inline void mg_aux(
       const uint64_t tau   = 1uLL <<  (logsize - t);
       const uint64_t eta   = 1uLL << logsize;
       // on input: there are 2**'logstride' interleaved series of size 'eta' = 2**(2*logsize-t);
-      if(!first_taylor_done) decompose_taylor_iterative_alt(logstride, 2 * t, t, eta, poly);
+      if(!first_taylor_done) decompose_taylor_recursive(logstride, 2 * t, t, eta, poly);
       // fft on columns
       // if logsize >= t, each fft should process 2**(logsize - t) values
       // i.e. logsize' = logsize - t
@@ -274,7 +311,6 @@ void mg_smalldegree(
   for(uint64_t i = 0; i < 1uLL << (logsize - logsizeprime); i++)
   {
     //offset in beta repr: i << logsizeprime
-    //for(int j = 0; j < 64; j++) offsets_mult[j] = beta_to_mult((i << logsizeprime) >> j, beta_table);
     mg_aux<s, 0>(mult_pow_table, poly + (i << logsizeprime), offsets_mult, logsizeprime, true);
     const long unsigned int h = _mm_popcnt_u64(i^(i+1)); // i^(i+1) is a power of 2 - 1
     // for j > h + logsizeprime, (i^(i+1) << i) >> logsizeprime = 0
@@ -288,6 +324,10 @@ void mg_smalldegree(
     }
   }
 }
+
+/**
+ * Reverse of mg_aux. See mg_aux for argument description.
+ */
 
 template <int s, int logstride>
 void mg_reverse_aux(
@@ -331,7 +371,7 @@ void mg_reverse_aux(
       // reverse fft on columns
       //offset' = offset >> t;
       mg_reverse_aux<s - 1, logstride + t>(mult_pow_table, poly, offsets_mult + t, logsize - t);
-      decompose_taylor_reverse_iterative_alt(logstride, 2 * t, t, eta, poly);
+      decompose_taylor_reverse_recursive(logstride, 2 * t, t, eta, poly);
     }
   }
 }
