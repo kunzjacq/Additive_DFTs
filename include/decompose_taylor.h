@@ -224,8 +224,6 @@ void decompose_taylor_reverse_recursive(
   assert(n >= num_coeffs);
   assert(m < num_coeffs);
   uint64_t delta = 1uLL << (logn - 1 - logtau);
-  // the order of the additions below is chosen so that
-  // values are used before they are modified
   const uint64_t num_coeffs_high = num_coeffs - m;
   const uint64_t num_coeffs_low  = m;
   if(num_coeffs_high > tau)
