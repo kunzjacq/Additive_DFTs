@@ -10,7 +10,7 @@
 using namespace std;
 
 /**
-  m_beta_over_mult[i] = beta_i in multplicative representation, i.e. in GF(2**64) as descibed in
+  m_beta_over_mult[i] = beta_i in multplicative representation, i.e. in GF(2**64) as described in
   function 'product'. beta_i refers to the beta basis in mateer-gao algorithm.
   */
 static constexpr uint64_t m_beta_over_mult[] = {
@@ -81,10 +81,13 @@ static inline uint64_t sq_iter(const uint64_t&a)
   return xa[0];
 }
 
-
 /**
- with
- const uint64_t stride = 1uLL << logstride;
+ * @brief eval_degree1
+ * evaluates in-place 2**logstride degree 1 polynomials in val and val^1,
+ * in multiplicative representation.
+ *
+ *  with
+ const uint64_t stride = 1uLL << logstride
 
  * if (!reverse), equivalent to
 
@@ -105,6 +108,14 @@ static inline uint64_t sq_iter(const uint64_t&a)
    p[i]          ^= product(p[i + stride], val);
   }
 
+ * @param reverse
+ * if true, reverses the polynomial evaluation to rebuild coefficients.
+ * @param logstride
+ * the log2 number of polynomials.
+ * @param val
+ * the value which the polynomials are evaluated at.
+ * @param p
+ * a pointer to the array containing the interleaved polynomials.
  */
 template<bool reverse, int logstride>
 static inline void eval_degree1(const uint64_t val, uint64_t* p)
@@ -209,13 +220,28 @@ static inline void eval_degree1(const uint64_t val, uint64_t* p)
   }
 }
 
-
-// tau >= 2
+/**
+ * @brief mg_decompose_taylor_recursive
+ * in-place taylor decomposition of input interleaved polynomials pointed by 'p'.
+ * there are 2**'logstride' polynomials, of degree 2**'logsize'-1.
+ * It is assumed that
+ *  t >= 1
+ *  logsize > t && logsize <= 2*t
+ * For tau = 2**t, (tau >= 2),
+ * each polynomial is rewritten as sum_i f_i (x**tau - x)**i
+ * where each f_i is of degree < tau. f_i = 0 if i >= 2**(logsize - t).
+ * f_i replaces coefficents of degree i*tau, ..., (i+1)*tau - 1 in each initial polynomial.
+ * @param logstride
+ * @param t
+ * @param logsize
+ * @param p
+ */
 template<unsigned int logstride, unsigned int t>
 inline void mg_decompose_taylor_recursive(
     unsigned int logsize,
     uint64_t* p)
 {
+  static_assert(t >= 1);
   assert(logsize > t && logsize <= 2*t);
   //decompose_taylor_one_step
   uint64_t delta_s   = 1uLL << (logstride + logsize - 1 - t); // logn - 1 - t >= 0
@@ -232,11 +258,20 @@ inline void mg_decompose_taylor_recursive(
   }
 }
 
+/**
+ * @brief mg_decompose_taylor_reverse_recursive
+ * reverse function of mg_decompose_taylor_recursive.
+ * @param logstride
+ * @param t
+ * @param logsize
+ * @param p
+ */
 template<unsigned int logstride, unsigned int t>
 inline void mg_decompose_taylor_reverse_recursive(
     unsigned int logsize,
     uint64_t* p)
 {
+  static_assert(t >= 1);
   assert(logsize > t && logsize <= 2*t);
   const uint64_t n_s = 1uLL  << (logstride + logsize);
   const uint64_t m_s = n_s >> 1;
@@ -260,6 +295,10 @@ inline void mg_decompose_taylor_reverse_recursive(
  * Output values computed correspond to input values whose beta representation is
  * offset ^ i, i=0 ... 2**logsize - 1, and offset is a multiple of 2**logsize.
  * the multiplicative representation of 'offset' is in offsets_mult[0] (see below).
+ * @param s
+ * a recursion parameter s.t. logsize <= 2**s.
+ * @param logstride
+ * the log2 number of interleaved polynomials on input.
  * @param mult_pow_table
  * mult_pow_table[i], i < 2**s, contains the value 2**(i+1) - 1 in beta representation.
  * (i.e. i consecutive bits set to 1 starting from 0) converted to multiplicative representation.
@@ -270,7 +309,9 @@ inline void mg_decompose_taylor_reverse_recursive(
  * offsets_mult[0] is the offset 'offset' of the values computed in beta representation,
  * converted to multiplicative representation.
  * offsets_mult[j], j < 2**s, is (offset >> j) converted to multplicative representation.
- * @param logsize the log2-size of the interval of values processed for each polynomial.
+ * @param logsize
+ * the log2 size of the input polynomials, equal to the size of interval of values
+ * computed for each polynomial.
  * @param first_taylor done
  * if true, the first taylor expansion to perform is skipped. enables an optimization when
  * the polynomial to process has small degree; see mg_smalldegree.
@@ -333,6 +374,22 @@ inline void mg_aux(
   }
 }
 
+/**
+ * @brief mg_smalldegree
+ * computes one truncated DFTs of an input polynomial of degree < 2**logsizeprime.
+ * 2**logsize output values are computed, with logsizeprime <= logsize.
+ * If logsizeprime < logsize, this function is more efficient than a direct call to mg_aux.
+ * @param s
+ * a recursion parameter s.t. logsize <= 2**s.
+ * @param mult_pow_table
+ * see the same argument for mg_aux.
+ * @param p
+ * the input and output array, of size 2**logsize.
+ * @param logsizeprime
+ * a log2 bound on the number of coefficients of the input polynomial.
+ * @param logsize
+ * the log2 number of output values computed (with offset 0).
+ */
 template <unsigned int s>
 void mg_smalldegree(
     uint64_t* mult_pow_table,
@@ -385,9 +442,9 @@ void mg_smalldegree(
 }
 
 /**
+ * @brief mg_reverse_aux
  * Reverse of mg_aux. See mg_aux for argument description.
  */
-
 template <int s, int logstride>
 void mg_reverse_aux(
     uint64_t* mult_pow_table,
@@ -466,6 +523,17 @@ static void contract(uint64_t* buf, uint8_t* p, uint64_t d)
   }
 }
 
+/**
+ * @brief mateer_gao_polynomial_product::binary_polynomial_multiply
+ * computes the product of 2 binary polynomials pointed to by 'p1' and 'p2' and of degree 'd1'
+ * and 'd2'.
+ * result is stored in 'result'.
+ * @param p1
+ * @param p2
+ * @param result
+ * @param d1
+ * @param d2
+ */
 void mateer_gao_polynomial_product::binary_polynomial_multiply(
     uint8_t* p1, uint8_t* p2, uint8_t* result, uint64_t d1, uint64_t d2)
 {
