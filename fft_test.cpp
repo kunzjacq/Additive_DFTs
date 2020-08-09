@@ -38,11 +38,6 @@ static bool reverse_dft_test(
     unsigned int num_sz,
     bool check_correctness,
     bool benchmark);
-static bool full_mateer_gao_test(
-    word* p_buffers,
-    cantor_basis<word>& c,
-    bool check_correctness,
-    bool benchmark);
 static bool truncated_mateer_gao_dft_test(
     word* p_buffers,
     cantor_basis<word>& c,
@@ -74,7 +69,7 @@ static bool decompose_taylor_test(
 int main(int UNUSED(argc), char** UNUSED(argv))
 {
   word* buffers = new word[allocated_buf_size];
-  unsigned int log_sz[] = {20, 26, 30};
+  unsigned int log_sz[] = {20, 24};
   unsigned int num_sz = sizeof(log_sz) / sizeof(unsigned int);
   bool error = false;
   double truncated_times[sizeof(log_sz) / 4];
@@ -84,8 +79,8 @@ int main(int UNUSED(argc), char** UNUSED(argv))
 
   init_time();
 
-  bool run_all_tests[]    = {true,  true,  true,  true, true, true,  true};
-  bool run_custom_tests[] = {false, false, false, true, true, false, false};
+  bool run_all_tests[]    = {true,  true,  true, true, true,  true};
+  bool run_custom_tests[] = {false, false, true, true, false, false};
   bool* run_tests = run_all_tests;
 
   if(run_tests[0])
@@ -103,15 +98,11 @@ int main(int UNUSED(argc), char** UNUSED(argv))
   bool mateer_gao_error = false;
   if(run_tests[2])
   {
-    mateer_gao_error |= full_mateer_gao_test(buffers, c, check_correctness, benchmark);
-  }
-  if(run_tests[3])
-  {
     mateer_gao_error |= truncated_mateer_gao_dft_test(
           buffers, c, log_sz, num_sz, truncated_times, check_correctness, benchmark, false);
     has_truncated_times = true;
   }
-  if(run_tests[4])
+  if(run_tests[3])
   {
     mateer_gao_error |= reverse_truncated_mateer_gao_dft_test(
           buffers, c, log_sz, num_sz, truncated_times, has_truncated_times,
@@ -119,12 +110,12 @@ int main(int UNUSED(argc), char** UNUSED(argv))
   }
   if(mateer_gao_error) cout << "Some Mateer-Gao tests failed" << endl;
   error |= mateer_gao_error;
-  if(run_tests[5])
+  if(run_tests[4])
   {
     bool decompose_taylor_error = decompose_taylor_test(buffers, check_correctness, benchmark);
     error |= decompose_taylor_error;
   }
-  if(run_tests[6])
+  if(run_tests[5])
   {
     bool inverse_fft_error = dft_inversion_test(buffers, c);
     if(inverse_fft_error) cout << "dft_inversion_test failed" << endl;
@@ -306,87 +297,6 @@ bool reverse_dft_test(
   else
   {
     cout << "Inverse DFT succeeded" << endl;
-  }
-  return error;
-}
-
-bool full_mateer_gao_test(word* p_buffers, cantor_basis<word>& c, bool check_correctness, bool benchmark)
-{
-  bool error = false;
-  cout << dec;
-  cout << endl << "Full Mateer-Gao (M-G) DFT test/benchmark" << endl;
-  if constexpr(c_b_t<word>::n >= full_dft_test_size_limit)
-  {
-    cout << endl << "Size too large, skipping test" << endl;
-    return false;
-  }
-  else
-  {
-    uint64_t i;
-    constexpr uint32_t field_sz = c_b_t<word>::n;
-    uint64_t sz = 1uLL << field_sz;
-    constexpr unsigned int s = c_b_t<word>::word_logsize;
-    additive_fft<word> fft(&c);
-    uint64_t check_sz = min<uint64_t>(1uLL << 12, sz);
-    word* refIn   = p_buffers;
-    word* buffer1 = refIn + sz; // buffer of size sz >> 2 for additive_fft_fast_in_place
-    word* refOut  = buffer1 + (sz >> 2); // buffer of size check_sz to verify result
-
-    if(sz + (sz>>2) + check_sz > allocated_buf_size)
-    {
-      cout << "Size too large to fit into allocated buffer for this test" << endl;
-      return true;
-    }
-    uint64_t degree = sz - 2;
-    cout << "Input is a polynomial of degree " << degree << " in field of size 2**" << field_sz << endl;
-    if(check_correctness)
-    {
-      cout << "Evaluating polynomial with full regular additive DFT..." << endl;
-      surand(5);
-      for (i = 0; i <= degree; i++) refIn[i] = static_cast<word>(urand());
-      for (; i < sz; i++) refIn[i] = 0;
-      fft.additive_fft_fast_in_place(refIn, sz - 2, field_sz, buffer1, 0);
-      memcpy(refOut, refIn, check_sz * sizeof(word));
-      cout << "Evaluating polynomial with M-G DFT..." << endl;
-      surand(5);
-      for (i = 0; i <= degree; i++) refIn[i] = static_cast<word>(urand());
-      for (; i < sz; i++) refIn[i] = 0;
-      fft_mateer<word ,s>(&c, refIn);
-      error = compare_results<word>(refIn, refOut, check_sz);
-    }
-    if(benchmark)
-    {
-      double t1 = 0, t2 = 0;
-      cout << "Benchmarking: full regular additive DFT..." << endl;
-      t1 = absolute_time();
-      i = 0;
-      do
-      {
-        for (i = 0; i <= min<uint64_t>(degree,16); i++) refIn[i] = static_cast<word>(urand());
-        for (;i <= degree; i++) refIn[i] = refIn[i&0xF];
-        for (; i < sz; i++) refIn[i] = 0;
-        fft.additive_fft_fast_in_place(refIn, sz - 2, field_sz, buffer1, 0);
-        i++;
-      }
-      while(absolute_time() <= t1 + 1);
-      t1 = (absolute_time() - t1) / i;
-      cout << "time for full regular additive DFT per iteration:  " << t1 << " sec." << endl;
-
-      t2 = absolute_time();
-      i = 0;
-      do
-      {
-        for (i = 0; i <= min<uint64_t>(degree,16); i++) refIn[i] = static_cast<word>(urand());
-        for (;i <= degree; i++) refIn[i] = refIn[i&0xF];
-        for (; i < sz; i++) refIn[i] = 0;
-        fft_mateer<word ,s>(&c, refIn);
-        i++;
-      }
-      while(absolute_time() <= t2 + 1);
-      t2 = (absolute_time() - t2) / i;
-      cout << "time of FMG DFT per iteration:  " <<  t2 << " sec." << endl;
-      cout << "FMG/regular additive DFT speed ratio : " <<  t1 / t2 << endl;
-    }
   }
   return error;
 }
