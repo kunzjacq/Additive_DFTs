@@ -69,8 +69,6 @@ int compare_results(word* p_dataA, word* p_dataB, size_t p_group_size, size_t p_
   {
     if (p_dataA[i] != p_dataB[i])
     {
-      //cout << "Error at " << dec << i << ": "; print_value(p_dataA[i]);
-      //cout << "/"; print_value(p_dataB[i]); cout << endl;
       num_errors++;
     }
   }

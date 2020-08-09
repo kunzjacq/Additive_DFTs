@@ -5,8 +5,6 @@
 #include "utils.h"
 #include "polynomial_product.h"
 
-#include "gf2x.h"
-
 #include <iostream>
 #include <cstdio>
 #include <cstdlib>
@@ -25,7 +23,6 @@ constexpr bool benchmark = true;
 constexpr int full_dft_test_size_limit = 16; // do not perform full DFTs above this size
 
 static int test_relations(const cantor_basis<word>& c_b, const word& x);
-
 
 static bool additive_dft_test(
     word* p_buffers,
@@ -65,12 +62,6 @@ static bool reverse_truncated_mateer_gao_dft_test(
     bool check_correctness,
     bool benchmark,
     bool full);
-static bool mateer_gao_product_test(
-    word* p_buffers,
-    unsigned int* log_sz,
-    unsigned int num_sz,
-    bool check_correctness,
-    bool benchmark);
 static bool dft_inversion_test(
     word* p_buffers,
     cantor_basis<word>& c);
@@ -93,8 +84,8 @@ int main(int UNUSED(argc), char** UNUSED(argv))
 
   init_time();
 
-  bool run_all_tests[]    = {true,  true,  true,  true, true, true,  true,  true};
-  bool run_custom_tests[] = {false, false, false, true, true, false, false, false};
+  bool run_all_tests[]    = {true,  true,  true,  true, true, true,  true};
+  bool run_custom_tests[] = {false, false, false, true, true, false, false};
   bool* run_tests = run_all_tests;
 
   if(run_tests[0])
@@ -126,19 +117,14 @@ int main(int UNUSED(argc), char** UNUSED(argv))
           buffers, c, log_sz, num_sz, truncated_times, has_truncated_times,
           check_correctness, benchmark, false);
   }
-  if(run_tests[5])
-  {
-    mateer_gao_error |= mateer_gao_product_test(
-          buffers, log_sz, num_sz, check_correctness, benchmark);
-  }
   if(mateer_gao_error) cout << "Some Mateer-Gao tests failed" << endl;
   error |= mateer_gao_error;
-  if(run_tests[6])
+  if(run_tests[5])
   {
     bool decompose_taylor_error = decompose_taylor_test(buffers, check_correctness, benchmark);
     error |= decompose_taylor_error;
   }
-  if(run_tests[7])
+  if(run_tests[6])
   {
     bool inverse_fft_error = dft_inversion_test(buffers, c);
     if(inverse_fft_error) cout << "dft_inversion_test failed" << endl;
@@ -708,100 +694,6 @@ bool reverse_truncated_mateer_gao_dft_test(
         cout << "Reverse truncated MG ((multiplicative representation, reference + representation conversion) / gamma representation, reference) speed ratio: " << t2 / t4 << endl;
       }
 
-    }
-  }
-  return error;
-}
-
-bool mateer_gao_product_test(
-    word* p_buffers,
-    unsigned int* log_sz,
-    unsigned int num_sz,
-    bool check_correctness,
-    bool benchmark)
-{
-  uint64_t i;
-  double t1 = 0, t2 = 0;
-  bool local_error, error = false;
-  uint32_t field_logsz = c_b_t<word>::n;
-
-  unsigned int lsz;
-  uint64_t degree;
-  uint64_t sz;
-  mateer_gao_polynomial_product mp;
-  cout << endl << endl << "Mateer-Gao polynomial product test" << endl;
-  // computing products of polynomials over f2 with mateer-gao fft and checking the result
-  // with gf2x
-  for(unsigned int j = 0; j < num_sz; j++)
-  {
-    lsz = log_sz[j];
-    if(lsz > c_b_t<word>::n) continue;
-    sz = 1uLL << lsz;
-    uint64_t needed_buf_bitsize = sz*3; // buffer size needed, in bits
-    if(needed_buf_bitsize > (allocated_buf_size << c_b_t<word>::word_logsize))
-    {
-      cout << "Allocated buffer is too small for this test" << endl;
-      cout << "Needed buf size: " << (needed_buf_bitsize >> (23)) <<
-              "MB; allocated: " << (allocated_buf_size >>(23-c_b_t<word>::word_logsize))<< "MB" << endl;
-      break; // assume sizes are increasing, therefore remaining tests are skipped as well
-    }
-    uint8_t* p1 = (uint8_t*) p_buffers; // byte size sz/16
-    uint8_t* p2 = p1 + sz/16; // byte size sz/16
-    uint8_t* p3 = p2 + sz/16; // byte size sz/8
-    uint8_t* p4 = p3 + sz/8;  // byte size sz/8
-    // create two random polynomials with sz/2 coefficients
-    surand(5);
-    for(size_t i = 0; i < sz / 16; i++)
-    {
-      p1[i] = urand() & 0xFF;
-      p2[i] = urand() & 0xFF;
-    }
-    if (check_correctness)
-    {
-      cout << endl << "Testing F2 polynomial product through FFTs. Multiplying 2 polynomials of degree " <<
-              sz/2 - 1 << ", in field of size 2**" << field_logsz << endl;
-      // multiply polynomials with gf2x, put result in p3
-      gf2x_mul(
-            (unsigned long *) p3, (unsigned long *) p1, sz/(16*sizeof(unsigned long)),
-            (unsigned long *) p2, sz/(16*sizeof(unsigned long)));
-      // multiply polynomials with additive fft, put result in p4
-      mp.binary_polynomial_multiply(p1, p2, p4, sz/2 - 1, sz/2 - 1);
-      // compare results
-      local_error = compare_results<uint8_t>(p3, p4, sz/8);
-      error |= local_error;
-    }
-    if(benchmark)
-    {
-      degree = sz - 1; // degree of the product. Each polynomial will be of degree sz/2-1.
-      cout << endl << "Benchmarking F2 polynomial product through FFTs with maximum total degree "
-           << degree << ", in field of size 2**" << field_logsz << endl;
-      t1 = absolute_time();
-      i = 0;
-
-      cout << "Performing product with gf2x" << endl;
-      do
-      {
-        gf2x_mul((unsigned long *) p3,(unsigned long *) p1, sz/(16*sizeof(unsigned long)),
-                 (unsigned long *) p2, sz/(16*sizeof(unsigned long)));
-        i++;
-      }
-      while(absolute_time() <= t1 + 1);
-      t1 = (absolute_time() - t1) / i;
-      cout << "gf2x time: " << t1 << endl;
-      cout << "Performing product with MG DFT" << endl;
-
-      t2 = absolute_time();
-      i = 0;
-      do
-      {
-        mp.binary_polynomial_multiply(p1, p2, p4, sz/2 - 1, sz/2 - 1);
-        i++;
-      }
-      while(absolute_time() <= t2 + 1);
-      t2 = (absolute_time() - t2) / i;
-      cout << "iterations: " << i << endl;
-      cout << "Mateer-Gao time: " << t2 << endl;
-      cout << "MG / gf2x speed ratio: " << t1 / t2 << endl;
     }
   }
   return error;

@@ -56,6 +56,52 @@ static inline uint64_t product(const uint64_t&a, const uint64_t&b)
   return xb[0];
 }
 
+static void product_batch(uint64_t* a_ptr, uint64_t* b_ptr, unsigned int logsize)
+{
+  const uint64_t sz = 1uLL << logsize;
+  assert(logsize >= 2);
+
+  constexpr uint64_t minpoly = 0x1b;
+  __m128i xp, xa1, xa2, xa3, xa4, xb1, xb2, xb3, xb4, xc1, xc2, xc3, xc4;
+  xp[0] = minpoly;
+  for(uint64_t i = 0; i < sz; i += 4)
+  {
+    xa1 = _mm_set1_epi64x(a_ptr[i]);
+    xa2 = _mm_set1_epi64x(a_ptr[i + 1]);
+    xa3 = _mm_set1_epi64x(a_ptr[i + 2]);
+    xa4 = _mm_set1_epi64x(a_ptr[i + 3]);
+
+    xb1 = _mm_set1_epi64x(b_ptr[i]);
+    xb2 = _mm_set1_epi64x(b_ptr[i + 1]);
+    xb3 = _mm_set1_epi64x(b_ptr[i + 2]);
+    xb4 = _mm_set1_epi64x(b_ptr[i + 3]);
+    xb1 = _mm_clmulepi64_si128(xa1, xb1, 0x00);
+    xb2 = _mm_clmulepi64_si128(xa2, xb2, 0x00);
+    xb3 = _mm_clmulepi64_si128(xa3, xb3, 0x00);
+    xb4 = _mm_clmulepi64_si128(xa4, xb4, 0x00);
+    xc1 = _mm_clmulepi64_si128(xp, xb1, 0x10);
+    xc2 = _mm_clmulepi64_si128(xp, xb2, 0x10);
+    xc3 = _mm_clmulepi64_si128(xp, xb3, 0x10);
+    xc4 = _mm_clmulepi64_si128(xp, xb4, 0x10);
+    xb1 = _mm_xor_si128(xb1, xc1);
+    xb2 = _mm_xor_si128(xb2, xc2);
+    xb3 = _mm_xor_si128(xb3, xc3);
+    xb4 = _mm_xor_si128(xb4, xc4);
+    xc1 = _mm_clmulepi64_si128(xp, xc1, 0x10);
+    xc2 = _mm_clmulepi64_si128(xp, xc2, 0x10);
+    xc3 = _mm_clmulepi64_si128(xp, xc3, 0x10);
+    xc4 = _mm_clmulepi64_si128(xp, xc4, 0x10);
+    xb1 = _mm_xor_si128(xb1, xc1);
+    xb2 = _mm_xor_si128(xb2, xc2);
+    xb3 = _mm_xor_si128(xb3, xc3);
+    xb4 = _mm_xor_si128(xb4, xc4);
+    a_ptr[i]     = xb1[0];
+    a_ptr[i + 1] = xb2[0];
+    a_ptr[i + 2] = xb3[0];
+    a_ptr[i + 3] = xb4[0];
+  }
+}
+
 /**
 * @brief sq_iter
 * Iterated squaring in GF(2**64). See 'product'.
@@ -546,7 +592,7 @@ void mateer_gao_polynomial_product::binary_polynomial_multiply(
   unique_ptr<uint64_t[]> _1(b1);
   uint64_t* b2 = new uint64_t[1uLL<<logsize];
   unique_ptr<uint64_t[]> _2(b2);
-  const uint64_t sz = (1uLL << logsize);
+  const uint64_t sz = 1uLL << logsize;
   uint64_t w1 = expand(p1, b1, d1, sz);
   uint64_t w2 = expand(p2, b2, d2, sz);
   int logsizeprime = logsize;
@@ -555,7 +601,14 @@ void mateer_gao_polynomial_product::binary_polynomial_multiply(
   logsizeprime = logsize;
   while(1uLL << logsizeprime >= 2 * w2) logsizeprime--;
   mg_smalldegree<s>(m_mult_beta_pow_table, b2, logsizeprime, logsize);
-  for(size_t i = 0; i < sz; i++) b1[i] = product(b1[i], b2[i]);
+  if(logsize < 2)
+  {
+    for(size_t i = 0; i < sz; i++) b1[i] = product(b1[i], b2[i]);
+  }
+  else
+  {
+    product_batch(b1, b2, logsize);
+  }
   mg_reverse_aux<s,0>(m_mult_beta_pow_table, b1, offsets_mult, logsize);
   contract(b1, result, d1 + d2);
 }

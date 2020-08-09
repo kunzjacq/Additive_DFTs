@@ -65,6 +65,13 @@ add_executable(fft_test
  "libcantor/cantor_basis_full.cpp"
  "libcantor/helpers.cpp")
 
+add_executable(product_test
+ "product_test.cpp"
+ "libfft/mg.cpp"
+ "libfft/utils.cpp"
+ )
+
+
 if(Boost_FOUND)
   message("Using Boost for large integers")
   target_link_libraries(cantor_basis_test ${Boost_LIBRARIES})
@@ -73,4 +80,5 @@ else()
   message("Boost large integers not available")
 endif()
 
-target_link_libraries(fft_test gf2x)
+target_link_libraries(product_test gf2x)
+
