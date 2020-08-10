@@ -19,7 +19,7 @@ using namespace std::chrono;
 #define UNUSED(x)       x
 #endif
 
-constexpr bool check_correctness = true;
+constexpr bool check_correctness = false;
 constexpr bool benchmark = true;
 
 class timer
@@ -68,13 +68,14 @@ static bool mateer_gao_product_test(
     bool benchmark)
 {
   uint64_t i;
-  double t1 = 0, t2 = 0, max_time = 5.;
+  double t1 = 0, t2 = 0, min_time = 5.;
   timer tm;
   bool local_error, error = false;
   unsigned int lsz;
   uint64_t sz;
   mateer_gao_polynomial_product mp;
   cout << "Testing F2 polynomial product through Mateer-Gao DFT in GF(2**64)" << endl;
+  cout << "Minimum execution time per test: " << min_time << " sec." << endl;
 
   mt19937_64 engine;
   uniform_int_distribution<uint8_t> distr;
@@ -94,7 +95,7 @@ static bool mateer_gao_product_test(
     uint64_t needed_buf_bytesize = sz >> 2; // buffer size needed, in bits
     cout << endl << "Multiplying 2 polynomials of degree (2**" << lsz-1 << ")-1 = " <<
             sz/2 - 1 << endl;
-    cout << "Needed buffer size: " << (needed_buf_bytesize >> 20) << "MB" << endl;
+    //cout << "Needed buffer size: " << (needed_buf_bytesize >> 20) << "MB" << endl;
     uint64_t* buf = nullptr;
     try
     {
@@ -158,10 +159,10 @@ static bool mateer_gao_product_test(
         i++;
         t1 = tm.measure();
       }
-      while(t1 <= max_time);
+      while(t1 <= min_time);
       t1 /= i;
       cout << " gf2x iterations: " << i << endl;
-      cout << " gf2x time per iteration: " << t1 << endl;
+      cout << " gf2x time per iteration: " << t1 << " sec." << endl;
 
       cout << " Performing product with MG DFT" << endl;
       tm.set_start();
@@ -172,10 +173,10 @@ static bool mateer_gao_product_test(
         i++;
         t2 = tm.measure();
       }
-      while(t2 <= max_time);
+      while(t2 <= min_time);
       t2 /= i;
       cout << " Mateer-Gao iterations: " << i << endl;
-      cout << " Mateer-Gao product time per iteration: " << t2 << endl;
+      cout << " Mateer-Gao product time per iteration: " << t2 << " sec." << endl;
       cout << " MG / gf2x speed ratio: " << t1 / t2 << endl;
     }
   }
