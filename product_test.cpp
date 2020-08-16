@@ -91,13 +91,12 @@ static bool mateer_gao_product_test(
     uint64_t needed_buf_bytesize = sz >> 2; // buffer size needed, in bits
     cout << endl << "Multiplying 2 polynomials of degree (2**" << lsz-1 << ")-1 = " <<
             sz/2 - 1 << endl;
-    cout << "Needed buffer size: " << ((needed_buf_bytesize + (1uLL << 20) - 1) >> 20) << " MB" << endl;
     uint64_t* buf = nullptr;
     try
     {
       buf = new uint64_t[needed_buf_bytesize >> 3];
     }
-    catch(exception&)
+    catch(bad_alloc&)
     {
       cout << "Not enough memory for current test" << endl;
       continue;
@@ -172,7 +171,7 @@ static bool mateer_gao_product_test(
 
 int main(int UNUSED(argc), char** UNUSED(argv))
 {
-  unsigned int log_sz[] = {16, 17, 18, 19, 20, 24, 29};
+  unsigned int log_sz[] = {16, 20, 24, 29};
   unsigned int num_sz = sizeof(log_sz) / sizeof(unsigned int);
   bool mateer_gao_error = mateer_gao_product_test(log_sz, num_sz, benchmark);
   if(mateer_gao_error) cout << "Mateer-Gao product test failed" << endl;

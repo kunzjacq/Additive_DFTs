@@ -99,6 +99,7 @@ inline void mgtt_core(uint64_t* poly, const uint64_t* offsets_mult)
       // fft on columns
       // if logsize >= t, each fft should process 2**(logsize - t) values
       // i.e. logsize' = logsize - t
+      // offset' = offset >> t;
       mgtt_core<s - 1, logstride + t, logsize - t, false>(poly, offsets_mult + t);
       uint64_t offsets_local[t];
       for(unsigned int j = 0; j < t; j++) offsets_local[j] = offsets_mult[j];
@@ -106,8 +107,7 @@ inline void mgtt_core(uint64_t* poly, const uint64_t* offsets_mult)
       const uint64_t tau   = 1uLL <<  (logsize - t);
       for(uint64_t i = 0; i < tau; i++)
       {
-        // at all times, offset_mult_prime = beta_to_mult(offset + (i << t), beta_table)
-        // in multiplicative representation, at current depth and for iteration i, offset is offset[depth] ^ (i << t);
+        // at each iteration, offsets_local[j] = beta_to_mult(offset + (i << (t-j))), j < t
         mgtt_core<s - 1, logstride, t, false>(poly, offsets_local);
         const long int h = _mm_popcnt_u64(i^(i+1)); // i^(i+1) is a power of 2 - 1
         for(unsigned int j = 0; j < t; j++)
@@ -144,8 +144,7 @@ void mgtt_reverse_core(uint64_t* poly, const uint64_t* offsets_mult)
       for(unsigned int j = 0; j < t; j++) offsets_local[j] = offsets_mult[j];
       for(uint64_t i = 0; i < tau; i++)
       {
-        // offset_mult_prime = beta_to_mult(offset ^ (i << t), beta_table)
-        // offset_prime = offset ^ (i << t);
+        // at each iteration, offsets_local[j] = beta_to_mult(offset + (i << (t-j))), j < t
         mgtt_reverse_core<s - 1, logstride, t>(poly_loc, offsets_local);
         long int h = _mm_popcnt_u64(i^(i+1));
         for(unsigned int j = 0; j < t; j++)
