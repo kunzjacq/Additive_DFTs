@@ -33,8 +33,7 @@ static inline uint64_t sq_iter(const uint64_t&a)
 }
 
 template<unsigned int logstride, unsigned int t, unsigned int logsize>
-inline void mgt_decompose_taylor_recursive(
-    uint64_t* p)
+inline void mgt_decompose_taylor_recursive(uint64_t* p)
 {
   static_assert(t >= 1);
   static_assert(logsize > t && logsize <= 2*t);
@@ -54,8 +53,7 @@ inline void mgt_decompose_taylor_recursive(
 }
 
 template<unsigned int logstride, unsigned int t, unsigned int logsize>
-inline void mgt_decompose_taylor_reverse_recursive(
-    uint64_t* p)
+inline void mgt_decompose_taylor_reverse_recursive(uint64_t* p)
 {
   static_assert(t >= 1);
   static_assert(logsize > t && logsize <= 2*t);
@@ -74,9 +72,7 @@ inline void mgt_decompose_taylor_reverse_recursive(
 }
 
 template <int s, int logstride, int logsize, bool first_taylor_done>
-inline void mgtt_core(
-    uint64_t* poly,
-    const uint64_t* offsets_mult)
+inline void mgtt_core(uint64_t* poly, const uint64_t* offsets_mult)
 // log2 size of each stride to be processed;
 // should be <= 2**s, the input is assumed to be of size 2**logsize and only the 2**logsize first output values are computed
 {
@@ -126,9 +122,7 @@ inline void mgtt_core(
 }
 
 template <int s, unsigned int logstride, unsigned int logsize>
-void mgtt_reverse_core(
-    uint64_t* poly,
-    const uint64_t* offsets_mult)
+void mgtt_reverse_core(uint64_t* poly, const uint64_t* offsets_mult)
 {
   if constexpr(s == 0)
   {

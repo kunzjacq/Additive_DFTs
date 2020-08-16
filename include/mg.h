@@ -23,9 +23,10 @@
  */
 void mg_binary_polynomial_multiply(uint8_t *p1, uint8_t *p2, uint8_t *result, uint64_t d1, uint64_t d2);
 
+#if 0
 /**
  beta_over_mult[i] = beta_i in multplicative representation, i.e. in GF(2**64) as described in
- function 'product'. beta_i refers to the beta basis in mateer-gao algorithm.
+ function 'product'. beta_i refers to the beta basis in Mateer-Gao algorithm.
 */
 static constexpr uint64_t beta_over_mult[] = {
   0x1               , 0x19c9369f278adc02, 0xa181e7d66f5ff795, 0x447175c8e9f2810b,
@@ -45,6 +46,7 @@ static constexpr uint64_t beta_over_mult[] = {
   0xb60c77a147cd8953, 0x5bf866708a444e09, 0x1449d1fdf01d5b76, 0xb230b2ee57674530,
   0x46fbb34fb404e77d, 0x1ea01f4ba902109e, 0x0d8989c26ace34e6, 0x8b7f48848818e45c
 };
+#endif
 
 /** beta_over_mult_cumulative[i] = sum_j=0 ... i - 1 beta_over_mult[i]
  *

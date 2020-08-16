@@ -9,6 +9,8 @@
 
 using namespace std;
 
+// to use the version of Mateer-Gao DFT where the log block size is a template parameter, instead
+// of the regular one below.
 #define USE_TEMPLATIZED
 
 /**
@@ -81,8 +83,6 @@ static void product_batch(uint64_t* a_ptr, uint64_t* b_ptr, unsigned int logsize
   }
 }
 
-
-
 /**
   @brief mg_core
  * computes the 2**logsize first values of 2**logstride interleaved polynomials given on input,
@@ -115,7 +115,7 @@ static void product_batch(uint64_t* a_ptr, uint64_t* b_ptr, unsigned int logsize
 template <int s, int logstride>
 inline void mg_core(
     uint64_t* poly,
-    uint64_t* offsets_mult,
+    const uint64_t* offsets_mult,
     unsigned int logsize,
     bool first_taylor_done)
 // log2 size of each stride to be processed;
@@ -251,7 +251,7 @@ void mg_smalldegree(
 template <int s, int logstride>
 void mg_reverse_core(
     uint64_t* poly,
-    uint64_t* offsets_mult,
+    const uint64_t* offsets_mult,
     unsigned int logsize)
 {
   if constexpr(s == 0)

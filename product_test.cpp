@@ -19,7 +19,6 @@ using namespace std::chrono;
 #define UNUSED(x)       x
 #endif
 
-constexpr bool check_correctness = true;
 constexpr bool benchmark = true;
 
 class timer
@@ -44,7 +43,7 @@ unsigned int extract(uint8_t* tbl, uint64_t sz, uint8_t* extract, uint32_t extra
   if(sz <= extract_sz)
   {
     for(unsigned int i = 0; i < sz; i++) extract[i] = tbl[i];
-    return sz;
+    return (uint32_t) sz;
   }
   else
   {
@@ -64,7 +63,6 @@ unsigned int extract(uint8_t* tbl, uint64_t sz, uint8_t* extract, uint32_t extra
 static bool mateer_gao_product_test(
     unsigned int* log_sz,
     unsigned int num_sz,
-    bool check_correctness,
     bool benchmark)
 {
   uint64_t i;
@@ -93,7 +91,7 @@ static bool mateer_gao_product_test(
     uint64_t needed_buf_bytesize = sz >> 2; // buffer size needed, in bits
     cout << endl << "Multiplying 2 polynomials of degree (2**" << lsz-1 << ")-1 = " <<
             sz/2 - 1 << endl;
-    cout << "Needed buffer size: " << ((needed_buf_bytesize + (1uLL << 20) - 1) >> 20) << "MB" << endl;
+    cout << "Needed buffer size: " << ((needed_buf_bytesize + (1uLL << 20) - 1) >> 20) << " MB" << endl;
     uint64_t* buf = nullptr;
     try
     {
@@ -116,77 +114,67 @@ static bool mateer_gao_product_test(
       p1[i] = draw();
       p2[i] = draw();
     }
-    if (check_correctness)
+    tm.set_start();
+    i = 0;
+    uint32_t e_sz = 0;
+    cout << " Performing product with gf2x" << endl;
+    do
     {
-      cout << "Checking result with gf2x" << endl;
-      // multiply polynomials with gf2x
-      gf2x_mul(
-            (unsigned long *) p3, (unsigned long *) p1, sz/(16*sizeof(unsigned long)),
-            (unsigned long *) p2, sz/(16*sizeof(unsigned long)));
-      // extract extract_size bytes to check for correctness
-      uint32_t e_sz =  extract(p3, sz/8, e1, extract_size);
-      // reset result
-      for(uint64_t i = 0; i < sz/8; i++) p3[i] = 0;
-      // multiply polynomials with additive fft
-      mg_binary_polynomial_multiply(p1, p2, p3, sz/2 - 1, sz/2 - 1);
-      extract(p3, sz/8, e2, extract_size);
-      // compare results
-      local_error = false;
-      for(uint32_t i = 0; i < e_sz; i++)
-      {
-        if(e1[i] != e2[i])
-        {
-          local_error = true;
-          break;
-        }
-      }
-      if(!local_error) cout << " ok" << endl;
-      else cout << " ** Wrong result **" << endl;
-      error |= local_error;
+      gf2x_mul((unsigned long *) p3,(unsigned long *) p1, sz/(16*sizeof(unsigned long)),
+               (unsigned long *) p2, sz/(16*sizeof(unsigned long)));
+      if(i == 0) e_sz =  extract(p3, sz/8, e1, extract_size);
+      i++;
+      t1 = tm.measure();
     }
-    if(benchmark)
-    {
-      cout << "Benchmarking" << endl;
-      tm.set_start();
-      i = 0;
-      cout << " Performing product with gf2x" << endl;
-      do
-      {
-        gf2x_mul((unsigned long *) p3,(unsigned long *) p1, sz/(16*sizeof(unsigned long)),
-                 (unsigned long *) p2, sz/(16*sizeof(unsigned long)));
-        i++;
-        t1 = tm.measure();
-      }
-      while(t1 <= max_time);
-      t1 /= i;
-      cout << " gf2x iterations: " << i << endl;
-      cout << " gf2x time per iteration: " << t1 << endl;
+    while(benchmark && (t1 <= max_time));
+    t1 /= i;
+    cout << " gf2x iterations: " << i << endl;
+    cout << " gf2x time per iteration: " << t1 << endl;
 
-      cout << " Performing product with MG DFT" << endl;
-      tm.set_start();
-      i = 0;
-      do
-      {
-        mg_binary_polynomial_multiply(p1, p2, p3, sz/2 - 1, sz/2 - 1);
-        i++;
-        t2 = tm.measure();
-      }
-      while(t2 <= max_time);
-      t2 /= i;
-      cout << " Mateer-Gao iterations: " << i << endl;
-      cout << " Mateer-Gao product time per iteration: " << t2 << endl;
-      cout << " MG / gf2x speed ratio: " << t1 / t2 << endl;
+    // reset result
+    for(uint64_t i = 0; i < sz/8; i++) p3[i] = 0;
+
+    cout << " Performing product with MG DFT" << endl;
+    tm.set_start();
+    i = 0;
+    do
+    {
+      mg_binary_polynomial_multiply(p1, p2, p3, sz/2 - 1, sz/2 - 1);
+      if(i == 0) extract(p3, sz/8, e2, extract_size);
+      i++;
+      t2 = tm.measure();
+
     }
+    while(benchmark && (t2 <= max_time));
+    t2 /= i;
+
+    cout << " Mateer-Gao iterations: " << i << endl;
+    cout << " Mateer-Gao product time per iteration: " << t2 << endl;
+    cout << " MG / gf2x speed ratio: " << t1 / t2 << endl;
+
+    // compare results
+    local_error = false;
+    for(uint32_t i = 0; i < e_sz; i++)
+    {
+      if(e1[i] != e2[i])
+      {
+        local_error = true;
+        break;
+      }
+    }
+    cout << "Checking result against gf2x: ";
+    if(!local_error) cout << " ok" << endl;
+    else cout << " ** Wrong result **" << endl;
+    error |= local_error;
   }
   return error;
 }
 
 int main(int UNUSED(argc), char** UNUSED(argv))
 {
-  unsigned int log_sz[] = {20, 24, 29};
+  unsigned int log_sz[] = {16, 17, 18, 19, 20, 24, 29};
   unsigned int num_sz = sizeof(log_sz) / sizeof(unsigned int);
-  bool mateer_gao_error = mateer_gao_product_test(
-          log_sz, num_sz, check_correctness, benchmark);
+  bool mateer_gao_error = mateer_gao_product_test(log_sz, num_sz, benchmark);
   if(mateer_gao_error) cout << "Mateer-Gao product test failed" << endl;
   return mateer_gao_error? EXIT_FAILURE : EXIT_SUCCESS;
 }
