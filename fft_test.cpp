@@ -79,9 +79,8 @@ int main(int UNUSED(argc), char** UNUSED(argv))
 
   init_time();
 
-  bool run_all_tests[]    = {true,  true,  true, true, true,  true};
-  bool run_custom_tests[] = {false, false, true, true, false, false};
-  bool* run_tests = run_all_tests;
+  bool run_tests[]    = {true,  true,  true, true, true,  true};
+  //bool run_tests[] = {false, false, true, true, false, false};
 
   if(run_tests[0])
   {

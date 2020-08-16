@@ -73,7 +73,6 @@ static bool mateer_gao_product_test(
   bool local_error, error = false;
   unsigned int lsz;
   uint64_t sz;
-  mateer_gao_polynomial_product mp;
   cout << "Testing F2 polynomial product through Mateer-Gao DFT in GF(2**64)" << endl;
 
   mt19937_64 engine;
@@ -94,13 +93,13 @@ static bool mateer_gao_product_test(
     uint64_t needed_buf_bytesize = sz >> 2; // buffer size needed, in bits
     cout << endl << "Multiplying 2 polynomials of degree (2**" << lsz-1 << ")-1 = " <<
             sz/2 - 1 << endl;
-    cout << "Needed buffer size: " << (needed_buf_bytesize >> 20) << "MB" << endl;
+    cout << "Needed buffer size: " << ((needed_buf_bytesize + (1uLL << 20) - 1) >> 20) << "MB" << endl;
     uint64_t* buf = nullptr;
     try
     {
       buf = new uint64_t[needed_buf_bytesize >> 3];
     }
-    catch(exception& e)
+    catch(exception&)
     {
       cout << "Not enough memory for current test" << endl;
       continue;
@@ -129,7 +128,7 @@ static bool mateer_gao_product_test(
       // reset result
       for(uint64_t i = 0; i < sz/8; i++) p3[i] = 0;
       // multiply polynomials with additive fft
-      mp.binary_polynomial_multiply(p1, p2, p3, sz/2 - 1, sz/2 - 1);
+      mg_binary_polynomial_multiply(p1, p2, p3, sz/2 - 1, sz/2 - 1);
       extract(p3, sz/8, e2, extract_size);
       // compare results
       local_error = false;
@@ -168,7 +167,7 @@ static bool mateer_gao_product_test(
       i = 0;
       do
       {
-        mp.binary_polynomial_multiply(p1, p2, p3, sz/2 - 1, sz/2 - 1);
+        mg_binary_polynomial_multiply(p1, p2, p3, sz/2 - 1, sz/2 - 1);
         i++;
         t2 = tm.measure();
       }
