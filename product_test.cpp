@@ -66,12 +66,13 @@ static bool mateer_gao_product_test(
     bool benchmark)
 {
   uint64_t i;
-  double t1 = 0, t2 = 0, max_time = 5.;
+  double t1 = 0, t2 = 0, min_time = 5.;
   timer tm;
   bool local_error, error = false;
   unsigned int lsz;
   uint64_t sz;
   cout << "Testing F2 polynomial product through Mateer-Gao DFT in GF(2**64)" << endl;
+  cout << "Minimum execution time per test: " << min_time << " sec." << endl;
 
   mt19937_64 engine;
   uniform_int_distribution<uint8_t> distr;
