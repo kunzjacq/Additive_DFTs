@@ -126,7 +126,7 @@ static bool mateer_gao_product_test(
       i++;
       t1 = tm.measure();
     }
-    while(benchmark && (t1 <= max_time));
+    while(benchmark && (t1 <= min_time));
     t1 /= i;
     cout << " gf2x iterations: " << i << endl;
     cout << " gf2x time per iteration: " << t1 << endl;
@@ -145,7 +145,7 @@ static bool mateer_gao_product_test(
       t2 = tm.measure();
 
     }
-    while(benchmark && (t2 <= max_time));
+    while(benchmark && (t2 <= min_time));
     t2 /= i;
 
     cout << " Mateer-Gao iterations: " << i << endl;
