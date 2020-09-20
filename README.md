@@ -49,22 +49,18 @@ Experiments on an AMD 3900X PC with 64GB of RAM are summarized below.
 |35| 678.952| 129.156|
 |36| not enough memory| 271.887|
 
-In log scale, the speed comparison is pictured below.
-
 ![Execution times](https://github.com/kunzjacq/Additive_DFTs/blob/master/times.png?raw=true)
-
-The speed ratio between gf2x and Mateer-Gao is pictured below.
 
 ![Speed ratio](https://github.com/kunzjacq/Additive_DFTs/blob/master/speed_ratio.png?raw=true)
 
-Polynomial product uses a fast implementation of GF(2^64) that is implemented with SSE2 and PCLMULQDQ. The availability of these instruction sets is not checked at runtime.
+The polynomial product code uses a fast implementation of multiplication in GF(2<sup>64</sup>) that is implemented with SSE2 and PCLMULQDQ. **The availability of these instruction sets is not checked at runtime**.
 
 ## Cantor bases for large field sizes
 
-Cantor bases are available for field sizes above 2^64 thanks to the optional use of Boost::multiprecision which implements large integers. With this library, the cantor basis test program tests the construction in finite fields of size up to 2^{2048}. In theory, truncated Wang-Zhu-Cantor DFT could work in such large fields, however it is not tested and does not work due to overflows in the handling of loop indexes, which are all of type uint64_t. There is probably little interest to use these field sizes for truncated DFTs; full DFTs are of course totally unrealistic in these cases.
+Cantor bases are available for field sizes above 2<sup>64</sup> thanks to the optional use of `Boost::multiprecision` which implements large integers. With this library, the cantor basis test program tests the construction in finite fields of size up to 2^{2048}. In theory, truncated Wang-Zhu-Cantor DFT could work in such large fields, however it is not tested and does not work due to overflows in the handling of loop indexes, which are all of type uint64_t. There is probably little interest to use these field sizes for truncated DFTs; full DFTs are of course totally unrealistic in these cases.
 
 ## Build instructions
-A compiled version of gf2x for the target platform must be placed in `lib/` (for linux) or `lib_mingw/` (for windows). For windows, MinGW gcc usage is assumed, for instance with the version that comes with MSYS2. cmake is needed, the usual cmake build process applies (in a build dir separate from the source dir $SOURCE_DIR):
+A compiled version of gf2x for the target platform must be placed in `lib/` (for linux) or `lib_mingw/` (for windows). For windows, MinGW gcc usage is assumed, for instance with the version that comes with MSYS2. Cmake is needed. The usual cmake build process applies (in a build directory separate from the source dir $SOURCE_DIR):
 
     cmake $SOURCE_DIR
     make
@@ -73,10 +69,10 @@ To make an optimized build, add `-DCMAKE_BUILD_TYPE=Release` to the cmake invoca
 
 There are three targets: 
   * `product_test` which benches Mateer-Gao polynomial products and checks them against gf2x;
-  * `fft_test` which enables to test and benchmark the DFT algorithms discussed above. If Boost::multiprecision   (https://www.boost.org/doc/libs/1_73_0/libs/multiprecision/doc/html/index.html) is detected, Cantor bases and DFT objects can be instantiated for all sizes for which large integers are available from this library. DFT algorithms are not tested (see above);
+  * `fft_test` which enables to test and benchmark the DFT algorithms discussed above. If `Boost::multiprecision` (https://www.boost.org/doc/libs/1_73_0/libs/multiprecision/doc/html/index.html) is detected, Cantor bases and DFT objects can be instantiated for all sizes for which large integers are available from this library. DFT algorithms are not tested (see above) and currently cannot work correctly in these fields;
   * `cantor_basis_test` which performs various consistency checks on cantor basis construction.
 
-The binary field used in tests and the size of the buffer used, which determine what tests can be run, can be adjusted at compile-time at the top of `fft_test.cpp`. Polynomial product always uses GF(2^64).
+The binary field used in tests and the size of the buffer used, which determine what tests can be run, can be adjusted at compile-time at the top of `fft_test.cpp`. Polynomial product always uses GF(2<sup>64</sup>).
 
 ## TODO
   * check the availability of the instructions used (SSE2, PCLMULQDQ) at runtime, before attempting to use them.
