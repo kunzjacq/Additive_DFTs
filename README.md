@@ -15,7 +15,7 @@ This project is about experimenting with these DFT algorithms. Reference impleme
 
 Mateer-Gao DFT (and crucially, its truncated implementation) is used to implement a fast multiplication of binary polynomials (see https://cr.yp.to/f2mult.html). It is tested and benched against the fastest implementation known to the author performing this operation, in library `gf2x` (https://gforge.inria.fr/projects/gf2x/). 
 
-The DFT approach is slower than gf2x for small sizes (< 2^20), and faster beyond that, at least in the case which was tested, where the polynomials multiplied have equal degree just below a power of 2.  It also appears to use less memory for large sizes. 
+The DFT approach is slower than gf2x for small sizes (< 2<sup>20</sup>), and faster beyond that, at least in the case which was tested, where the polynomials multiplied have equal degree just below a power of 2.  It also appears to use less memory for large sizes. Beyond the buffer to store the result, the Mateer-Gao product function uses 4 times the memory required for the result size, rounded to the next power of two.
 
 Experiments on an AMD 3900X PC with 64GB of RAM are summarized below.
 
@@ -60,7 +60,7 @@ The polynomial product code uses a fast implementation of multiplication in GF(2
 Cantor bases are available for field sizes above 2<sup>64</sup> thanks to the optional use of `Boost::multiprecision` which implements large integers. With this library, the cantor basis test program tests the construction in finite fields of size up to 2^{2048}. In theory, truncated Wang-Zhu-Cantor DFT could work in such large fields, however it is not tested and does not work due to overflows in the handling of loop indexes, which are all of type uint64_t. There is probably little interest to use these field sizes for truncated DFTs; full DFTs are of course totally unrealistic in these cases.
 
 ## Build instructions
-A compiled version of gf2x for the target platform must be placed in `lib/` (for linux) or `lib_mingw/` (for windows). For windows, MinGW gcc usage is assumed, for instance with the version that comes with MSYS2. Cmake is needed. The usual cmake build process applies (in a build directory separate from the source dir $SOURCE_DIR):
+Test programs can be built for 64-bit Linux or Windows. For windows, MinGW gcc usage is assumed, for instance with the version that comes with MSYS2. Cmake is needed. The usual cmake build process applies (in a build directory separate from the source dir $SOURCE_DIR):
 
     cmake $SOURCE_DIR
     make
@@ -72,8 +72,10 @@ There are three targets:
   * `fft_test` which enables to test and benchmark the DFT algorithms discussed above. If `Boost::multiprecision` (https://www.boost.org/doc/libs/1_73_0/libs/multiprecision/doc/html/index.html) is detected, Cantor bases and DFT objects can be instantiated for all sizes for which large integers are available from this library. DFT algorithms are not tested (see above) and currently cannot work correctly in these fields;
   * `cantor_basis_test` which performs various consistency checks on cantor basis construction.
 
-The binary field used in tests and the size of the buffer used, which determine what tests can be run, can be adjusted at compile-time at the top of `fft_test.cpp`. Polynomial product always uses GF(2<sup>64</sup>).
+For target `fft_test`, the binary field and the size of a buffer used in tests determine which tests can be run. These parameters can be adjusted at compile-time at the top of `fft_test.cpp`. 
+
+Target `product_test` requires a compiled version of gf2x for the target platform to be placed in `lib/` (for Linux) or `lib_mingw/` (for Windows). The finite field used is GF(2<sup>64</sup>).
 
 ## TODO
-  * check the availability of the instructions used (SSE2, PCLMULQDQ) at runtime, before attempting to use them.
+  * Check the availability of the instructions used (SSE2, PCLMULQDQ) at runtime, before attempting to use them.
 
