@@ -17,9 +17,9 @@ Mateer-Gao DFT (and crucially, its truncated implementation) is used to implemen
 
 The DFT approach is slower than gf2x for small sizes (< 2^20), and faster beyond that, at least in the case which was tested, where the polynomials multiplied have equal degree just below a power of 2.  It also appears to use less memory for large sizes. 
 
-Experiments on an AMD 3900X machine are summarized below.
+Experiments on an AMD 3900X PC with 64GB of RAM are summarized below.
 
-|Output size|gf2x product time (sec.)|Mateer-Gao product time (sec.)|
+|Output log2 size|gf2x product time (sec.)|Mateer-Gao product time (sec.)|
 |:----:|:----:|:----:|
 |10| 1.04702e-07| 1.55653e-06|
 |11| 2.68164e-07| 2.89191e-06|
