@@ -11,7 +11,8 @@ using namespace std;
 
 // to use the version of Mateer-Gao DFT where the log block size is a template parameter, instead
 // of the regular one below.
-#define USE_TEMPLATIZED
+// surprisingly, the templatized version is slower.
+// #define USE_TEMPLATIZED
 
 /**
  * @brief product
@@ -215,13 +216,28 @@ void mg_smalldegree(
 #else
       mg_core<s, 0>(p + (i << logsizeprime), offsets_mult, logsizeprime, true);
 #endif
-      const long unsigned int h = _mm_popcnt_u64(i^(i+1)); // i^(i+1) is a power of 2 - 1
-      // for j > h + logsizeprime, (i^(i+1) << i) >> logsizeprime = 0
-      for(unsigned int j = 0; j <= min<unsigned long>(63, h + logsizeprime); j++)
+      const long unsigned int h = _mm_popcnt_u64(i^(i+1));
+      // goal: xor to offsets_mult[j] to the multiplicative representation w of the value
+      // v = (i^(i+1) << logsizeprime) >> j in beta representation,
+      // 0 <= j < 2**s.
+      // i^(i+1) = 2**h - 1.
+      // beta_over_mult_cumulative[u] contains the multiplicative representation of
+      // the value 2**u - 1 in beta representation, u <= 64.
+      // (of hamming weight u)
+      // case 1: if j >= h + logsizeprime, (i^(i+1) << logsizeprime) >> j = 0,
+      // therefore w = 0.
+      // case 2: if j < h + logsizeprime but j >= logsizeprime, v = 2**(h-(j-logsizeprime)) - 1,
+      // therefore w = beta_over_mult_cumulative[h + logsizeprime - j].
+      // case 3: if j < logsizeprime,
+      // v = (2**h - 1) << (logsizeprime - j)
+      //   = (2**(h+ logsizeprime - j) - 1) ^ (2**(logsizeprime - j) - 1),
+      // therefore
+      // w = beta_over_mult_cumulative[h + logsizeprime - j] ^ beta_over_mult_cumulative[logsizeprime - j].
+      for(unsigned int j = 0; j < min<unsigned long>(1 << s, h + logsizeprime); j++)
       {
         offsets_mult[j] ^= beta_over_mult_cumulative[h + logsizeprime - j];
       }
-      for(unsigned int j = 0; j <= min<unsigned long>(63, logsizeprime); j++)
+      for(unsigned int j = 0; j < min<unsigned long>(1 << s, logsizeprime); j++)
       {
         offsets_mult[j] ^= beta_over_mult_cumulative[logsizeprime - j];
       }
