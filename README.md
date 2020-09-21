@@ -1,4 +1,4 @@
-# Additive_DFTs
+# Additive Discrete Fourier Transforms (DFTs)
 A C++17 implementation of several additive DFT algorithms over F2, and their application to fast binary polynomial multiplication.
 
 The implementation targets the x86_64 architecture with SSE2 and PCLMULQDQ instruction sets. Test programs showcase the different algorithms and test their correctness.
