@@ -5,7 +5,7 @@ The implementation targets the x86_64 architecture with SSE2 and PCLMULQDQ instr
 
 Algorithms implemented are: Von zur Gathen - Gehrard algorithm with Cantor bases (also called the Wang-Zhu-Cantor algorithm),  and the Mateer-Gao algorithm. Both of them are described in Todd Mateer Master Thesis (available at https://tigerprints.clemson.edu/all_dissertations/231/). Reverse algorithms are also implemented.
 
-Truncated versions of these algorithms are available to perform only a part of the DFT computation. Provided an input polynomial degree < v = 2<sup>u</sup>, the v first coefficients of the DFT can be computed efficiently (if the field has size w, the time to compute the truncated DFT is less than v/w the time to compute the full DFT). Truncated reverse transforms have the same complexity and build a polynomial of degree < v that takes the provided values.
+Truncated versions of these algorithms are available to perform only a part of the DFT computation. Provided with an input polynomial degree < v = 2<sup>u</sup>, the v first coefficients of the DFT can be computed efficiently (if the underlying finite field has size w, the time to compute the truncated DFT is less than v/w times the full DFT time). Truncated reverse transforms have the same complexity and build a polynomial of degree < v that takes the provided values.
 
 A combination of Wang-Zhu-Cantor and Mateer-Gao is also implemented to tackle the case of the computation of u values of a polynomial of degree d where u is much smaller than d.
 
@@ -13,13 +13,13 @@ This project is about experimenting with these DFT algorithms. Reference impleme
 
 ## Application to fast product of binary polynomials
 
-Mateer-Gao DFT (and crucially, its truncated implementation) is used to implement fast multiplication of binary polynomials (see https://cr.yp.to/f2mult.html ofr an outline of the method used. The basic idea is to use DFTs to evaluate the polynomials, to multiply the values, and to build the product polynomial from its values with an inverse DFT). It is tested and benched against the fastest implementation known to the author performing this operation, in library `gf2x` (https://gforge.inria.fr/projects/gf2x/).
+Mateer-Gao DFT (and crucially, its truncated implementation) is used to implement fast multiplication of binary polynomials (see https://cr.yp.to/f2mult.html for an outline of the method used. DFTs are used to evaluate the polynomials, then the values obtained for both polynomials are multiplied pointwise, and finally the product is built from the values with an inverse DFT). It is tested and benched against the fastest product implementation known to the author, from library `gf2x` (https://gforge.inria.fr/projects/gf2x/).
 
-The DFT approach is slower than gf2x for small sizes (< 2<sup>20</sup>), and faster beyond that, at least in the case which was tested, where the polynomials multiplied have equal degree just below a power of 2.  It also appears to use less memory for large sizes. Beyond the buffer to store the result, the Mateer-Gao product function uses 4 times the memory required for the result size, rounded to the next power of two.
+The DFT approach is tested by multiplying polynomials of degree 2<sup>u-1</sup> - 1 for values of u s.t. the computations fit into memory. It is slower than gf2x for small sizes (u < 20), and faster beyond that. It also appears to use less memory for large sizes. Beyond the buffer to store the result, the Mateer-Gao product function uses 4 times the memory required for the result size, rounded to the next power of two.
 
 Experiments on an AMD 3900X PC with 64GB of RAM are summarized below.
 
-|Output log2 size|gf2x product time (sec.)|Mateer-Gao product time (sec.)|
+|u = output log2 size|gf2x product time (sec.)|Mateer-Gao product time (sec.)|
 |:----:|:----:|:----:|
 |10| 1.04702e-07| 1.55653e-06|
 |11| 2.68164e-07| 2.89191e-06|
@@ -78,4 +78,5 @@ Target `product_test` requires a compiled version of gf2x for the target platfor
 
 ## TODO
   * Check the availability of the instructions used (SSE2, PCLMULQDQ) at runtime, before attempting to use them.
+  * Improve the memory usage of the product function. If v is the storage required for the output polynomial rounded to the next power of two, the additional memory required can be reduced from 4v to 3v at no computational cost. It can be further reduced with an increase of computation time.
 
