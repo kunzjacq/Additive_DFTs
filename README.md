@@ -1,9 +1,9 @@
 # Additive_DFTs
-A C++17 implementation of several additive DFT algorithms over F2, and their application to fast binary polynomial multiplication. 
- 
+A C++17 implementation of several additive DFT algorithms over F2, and their application to fast binary polynomial multiplication.
+
 The implementation targets the x86_64 architecture with SSE2 and PCLMULQDQ instruction sets. Test programs showcase the different algorithms and test their correctness.
- 
-Algorithms implemented are: Von zur Gathen - Gehrard algorithm with Cantor bases (also called the Wang-Zhu-Cantor algorithm),  and the Mateer-Gao algorithm. Both of them are described in Todd Mateer Master Thesis (https://tigerprints.clemson.edu/all_dissertations/231/). Reverse algorithms are also implemented.
+
+Algorithms implemented are: Von zur Gathen - Gehrard algorithm with Cantor bases (also called the Wang-Zhu-Cantor algorithm),  and the Mateer-Gao algorithm. Both of them are described in Todd Mateer Master Thesis (available at https://tigerprints.clemson.edu/all_dissertations/231/). Reverse algorithms are also implemented.
 
 Truncated versions of these algorithms are available to perform only a part of the DFT computation. Provided an input polynomial degree < v = 2<sup>u</sup>, the v first coefficients of the DFT can be computed efficiently (if the field has size w, the time to compute the truncated DFT is less than v/w the time to compute the full DFT). Truncated reverse transforms have the same complexity and build a polynomial of degree < v that takes the provided values.
 
@@ -11,9 +11,9 @@ A combination of Wang-Zhu-Cantor and Mateer-Gao is also implemented to tackle th
 
 This project is about experimenting with these DFT algorithms. Reference implementations that are close to the high-level description of the algorithms are therefore kept alongside more optimized versions that are more difficult to read. As a result there is some redundancy in the source code.
 
-## Binary polynomial product
+## Application to fast product of binary polynomials
 
-Mateer-Gao DFT (and crucially, its truncated implementation) is used to implement a fast multiplication of binary polynomials (see https://cr.yp.to/f2mult.html). It is tested and benched against the fastest implementation known to the author performing this operation, in library `gf2x` (https://gforge.inria.fr/projects/gf2x/). 
+Mateer-Gao DFT (and crucially, its truncated implementation) is used to implement fast multiplication of binary polynomials (see https://cr.yp.to/f2mult.html ofr an outline of the method used. The basic idea is to use DFTs to evaluate the polynomials, to multiply the values, and to build the product polynomial from its values with an inverse DFT). It is tested and benched against the fastest implementation known to the author performing this operation, in library `gf2x` (https://gforge.inria.fr/projects/gf2x/).
 
 The DFT approach is slower than gf2x for small sizes (< 2<sup>20</sup>), and faster beyond that, at least in the case which was tested, where the polynomials multiplied have equal degree just below a power of 2.  It also appears to use less memory for large sizes. Beyond the buffer to store the result, the Mateer-Gao product function uses 4 times the memory required for the result size, rounded to the next power of two.
 
@@ -57,7 +57,7 @@ The polynomial product code uses a fast implementation of multiplication in GF(2
 
 ## Cantor bases for large field sizes
 
-Cantor bases are available for field sizes above 2<sup>64</sup> thanks to the optional use of `Boost::multiprecision` which implements large integers. With this library, the cantor basis test program tests the construction in finite fields of size up to 2^{2048}. In theory, truncated Wang-Zhu-Cantor DFT could work in such large fields, however it is not tested and does not work due to overflows in the handling of loop indexes, which are all of type uint64_t. There is probably little interest to use these field sizes for truncated DFTs; full DFTs are of course totally unrealistic in these cases.
+Cantor bases are available for field sizes above 2<sup>64</sup> thanks to the optional use of `Boost::multiprecision` which implements large integers. With this library, the cantor basis test program tests the construction in finite fields of size up to 2<sup>2048</sup>. In theory, truncated Wang-Zhu-Cantor DFT could work in such large fields, however it is not tested and does not work due to overflows in the handling of loop indexes, which are all of type `uint64_t`. There is probably little interest to use these field sizes for truncated DFTs; full DFTs are of course totally unrealistic in these cases.
 
 ## Build instructions
 Test programs can be built for 64-bit Linux or Windows. For windows, MinGW gcc usage is assumed, for instance with the version that comes with MSYS2. Cmake is needed. The usual cmake build process applies (in a build directory separate from the source dir $SOURCE_DIR):
@@ -67,12 +67,12 @@ Test programs can be built for 64-bit Linux or Windows. For windows, MinGW gcc u
 
 To make an optimized build, add `-DCMAKE_BUILD_TYPE=Release` to the cmake invocation.
 
-There are three targets: 
+There are three targets:
   * `product_test` which benches Mateer-Gao polynomial products and checks them against gf2x;
   * `fft_test` which enables to test and benchmark the DFT algorithms discussed above. If `Boost::multiprecision` (https://www.boost.org/doc/libs/1_73_0/libs/multiprecision/doc/html/index.html) is detected, Cantor bases and DFT objects can be instantiated for all sizes for which large integers are available from this library. DFT algorithms are not tested (see above) and currently cannot work correctly in these fields;
   * `cantor_basis_test` which performs various consistency checks on cantor basis construction.
 
-For target `fft_test`, the binary field and the size of a buffer used in tests determine which tests can be run. These parameters can be adjusted at compile-time at the top of `fft_test.cpp`. 
+For target `fft_test`, the binary field and the size of a buffer used in tests determine which tests can be run. These parameters can be adjusted at compile-time at the top of `fft_test.cpp`.
 
 Target `product_test` requires a compiled version of gf2x for the target platform to be placed in `lib/` (for Linux) or `lib_mingw/` (for Windows). The finite field used is GF(2<sup>64</sup>).
 
