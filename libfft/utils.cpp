@@ -1,12 +1,5 @@
 #include "utils.h"
 
-#include <time.h>
-#include <sys/time.h>
-
-
-static long start_time_sec = 0;
-static long start_time_usec = 0;
-
 template <>
 void print_value(const uint8_t& p_data)
 {
@@ -18,28 +11,6 @@ void print_value(const uint8_t& p_data)
   {
     cout << "--";
   }
-}
-
-void init_time()
-{
-  struct timeval start;
-  gettimeofday(&start, nullptr);
-  start_time_sec = start.tv_sec;
-  start_time_usec = start.tv_usec;
-}
-
-double absolute_time(bool reset_reference) {
-  struct timeval t;
-  gettimeofday(&t, nullptr);
-  // subtracting start_time_sec aims at improving the precision of the conversion to double
-  double sec = t.tv_sec - start_time_sec;
-  double usec = t.tv_usec - start_time_usec;
-  if(reset_reference)
-  {
-    start_time_sec = t.tv_sec;
-    start_time_usec = t.tv_usec;
-  }
-  return sec + usec *1e-6;
 }
 
 #if 0

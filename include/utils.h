@@ -7,6 +7,7 @@
 
 #include <iostream>
 #include <iomanip>
+
 #include <mmintrin.h>
 #include <immintrin.h>
 
@@ -447,9 +448,6 @@ void interleave_eigth_buffer(word* buf, word* p_poly, int logsz)
   }
 }
 
-
-double absolute_time(bool reset_reference = false);
-void init_time();
 
 void surand(int32_t seed);
 uint32_t urand();

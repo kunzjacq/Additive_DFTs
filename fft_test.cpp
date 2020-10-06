@@ -3,6 +3,7 @@
 #include "mateer_gao.h"
 #include "mg.h"
 #include "utils.h"
+#include "timer.h"
 #include "polynomial_product.h"
 
 #include <iostream>
@@ -73,13 +74,9 @@ int main(int UNUSED(argc), char** UNUSED(argv))
   unsigned int num_sz = sizeof(log_sz) / sizeof(unsigned int);
   bool error = false;
   double truncated_times[sizeof(log_sz) / 4];
-  bool has_truncated_times = false;
   cantor_basis<word> c;
 
-
-  init_time();
-
-  bool run_tests[]    = {true,  true,  true, true, true,  true};
+  bool run_tests[]    = {true,  true,  true, true, true, true};
   //bool run_tests[] = {false, false, true, true, false, false};
 
   if(run_tests[0])
@@ -95,17 +92,18 @@ int main(int UNUSED(argc), char** UNUSED(argv))
     error |= reverse_fft_error;
   }
   bool mateer_gao_error = false;
+
+  bool full_mg_tests = false;
   if(run_tests[2])
   {
     mateer_gao_error |= truncated_mateer_gao_dft_test(
-          buffers, c, log_sz, num_sz, truncated_times, check_correctness, benchmark, false);
-    has_truncated_times = true;
+          buffers, c, log_sz, num_sz, truncated_times, check_correctness, benchmark, full_mg_tests);
   }
   if(run_tests[3])
   {
     mateer_gao_error |= reverse_truncated_mateer_gao_dft_test(
-          buffers, c, log_sz, num_sz, truncated_times, has_truncated_times,
-          check_correctness, benchmark, false);
+          buffers, c, log_sz, num_sz, truncated_times, full_mg_tests,
+          check_correctness, benchmark, full_mg_tests);
   }
   if(mateer_gao_error) cout << "Some Mateer-Gao tests failed" << endl;
   error |= mateer_gao_error;
@@ -175,14 +173,17 @@ bool additive_dft_test(
     refIn   = p_buffers;
     buffer1 = refIn + buf_sz;
     refOut  = buffer1 + (buf_sz >> 2);
+
+    timer t;
+
     if(check_correctness)
     {
       for (i = 0; i <= degree; i++) refIn[i] = static_cast<word>(urand());
       for(; i < buf_sz; i++) refIn[i] = 0;
       cout << "Evaluating polynomial with direct method on 2**" << check_logsize << " points..." << endl;
-      t1 = absolute_time();
+      t.set_start();
       fft.fft_direct(refIn, degree, check_logsize, refOut, blk_offset << (lsz - check_logsize));
-      t1 = (absolute_time() - t1) * (1u <<  (lsz - check_logsize));
+      t1 = t.measure() * (1u <<  (lsz - check_logsize));
       fft.additive_fft_fast_in_place(refIn, degree, lsz, buffer1, blk_offset);
       local_error = compare_results < word > (refOut, refIn, 1uL << check_logsize, 8, verbose);
       error |= local_error;
@@ -191,15 +192,15 @@ bool additive_dft_test(
     {
       cout << "extrapolated time of full DFT:  " << t1  << " sec." << endl;
       cout << "Doing additive DFT..." << endl;
-      t2 = absolute_time();
+      t.set_start();
       i = 0;
       do
       {
         fft.additive_fft_fast_in_place(refIn, degree, lsz, buffer1, blk_offset);
         i++;
       }
-      while(absolute_time() <= t2 + 1);
-      t2 = (absolute_time() - t2) / i;
+      while(t.measure() <= 1);
+      t2 = t.measure() / i;
       cout << "time of additive DFT:  " <<  t2 << " sec." << endl;
       cout << "Additive DFT/direct evaluation speed ratio : " << t1 / t2 << endl;
     }
@@ -267,23 +268,27 @@ bool reverse_dft_test(
     if(benchmark)
     {
       cout << "relative speed measurement" << endl;
-      double t1 = absolute_time();
+      double t1;
+      timer t;
+      t.set_start();
       i = 0;
       do
       {
         fft.additive_fft_rev_ref_in_place(buffer1, lsz, blk_offset);
         i++;
       }
-      while(absolute_time() <= t1 + 1);
-      t1 = absolute_time() - t1;
-      double t2 = absolute_time();
+      while((t1 = t.measure()) <= 1);
+      t1 /= i;
+      double t2;
+      t.set_start();
       i = 0;
       do
       {
         fft.additive_fft_rev_fast_in_place(buffer1, lsz, buffer2, blk_offset);
+        i++;
       }
-      while(absolute_time() <= t2 + 1);
-      t2 = absolute_time() - t2;
+      while((t2 = t.measure()) <= 1);
+      t2 /= i;
       cout << "time of reference implementation " << t1 << endl;
       cout << "time of fast implementation " << t2 << endl;
       cout << "rev fast / rev ref speed ratio:" << t1 / t2 << endl;
@@ -386,9 +391,10 @@ bool truncated_mateer_gao_dft_test(
       uint32_t count;
       cout << endl << "Benchmarking truncated Mateer-Gao variants" << endl;
       double t1 = 0, t2 = 0, t3 = 0, t4 = 0, t5 = 0;
+      timer t;
       if(full)
       {
-        t1 = absolute_time();
+        t.set_start();
         count = 0;
         do
         {
@@ -396,11 +402,11 @@ bool truncated_mateer_gao_dft_test(
           fft.additive_fft_fast_in_place(buffer1, degree, lsz, buffer1, 0);
           count++;
         }
-        while(absolute_time() <= t1 + 1);
-        t1 = (absolute_time() - t1) / count;
+        while((t1 = t.measure()) <= 1);
+        t1 /= count;
         cout << "time of truncated fast VzGG additive DFT:  " << t1 << " sec." << endl;
 
-        t2 = absolute_time();
+        t.set_start();
         count = 0;
         do
         {
@@ -408,11 +414,11 @@ bool truncated_mateer_gao_dft_test(
           fft.vzgg_mateer_gao_combination(buffer1, degree, lsz);
           count++;
         }
-        while(absolute_time() <= t2 + 1);
-        t2 = (absolute_time() - t2) / count;
+        while((t2 = t.measure()) <= 1);
+        t2 /= count;
         cout << "time of truncated VzGG - MG combination DFT:  " <<  t2 << " sec." << endl;
 
-        t3 = absolute_time();
+        t.set_start();
         count = 0;
         do
         {
@@ -420,25 +426,25 @@ bool truncated_mateer_gao_dft_test(
           fft_mateer_truncated<word, s>(&c, buffer1, lsz);
           count++;
         }
-        while(absolute_time() <= t3 + 1);
-        t3 = (absolute_time() - t3) / count;
+        while((t3 = t.measure()) <= 1);
+        t3 /= count;
         truncated_times[j] = t3; // for later comparison with reverse truncated Mateer-Gao
         cout << "time of truncated MG DFT (reference):  " << t3 << " sec." << endl;
       }
-      t4 = absolute_time();
-      count= 0;
+      t.set_start();
+      count = 0;
       do
       {
         for(i = 0; i < buf_sz; i++) buffer1[i] = refIn[i];
         fft_mateer_truncated_mult<word, s>(&c, buffer1, lsz);
         count++;
       }
-      while(absolute_time() <= t4 + 1);
-      t4 = (absolute_time() - t4) / count;
+      while((t4 = t.measure()) <= 1);
+      t4 /= count;
       cout << "time of truncated MG DFT in multiplicative representation (reference):  " << t4 << " sec." << endl;
 
-      t5 = absolute_time();
-      count= 0;
+      t.set_start();
+      count = 0;
       do
       {
         for(i = 0; i < buf_sz; i++) buffer1[i] = c.gamma_to_mult(refIn[i]);
@@ -446,8 +452,8 @@ bool truncated_mateer_gao_dft_test(
         for(i = 0; i < buf_sz; i++) buffer1[i] = c.mult_to_gamma(buffer1[i]);
         count++;
       }
-      while(absolute_time() <= t5 + 1);
-      t5 = (absolute_time() - t5) / count;
+      while((t5 = t.measure()) <= 1);
+      t5 /= count;
       cout << "time of truncated MG DFT in multiplicative representation (reference) + representation conversion:  " << t5 << " sec." << endl;
 
 
@@ -539,9 +545,10 @@ bool reverse_truncated_mateer_gao_dft_test(
               ", on 2**" <<  lsz << " points, in field of size 2**" << field_logsz << endl;
 
       double t1 = 0, t2 = 0, t3 = 0, t4 = 0;
+      timer t;
       if(full)
       {
-        t1 = absolute_time();
+        t.set_start();
         count = 0;
         do
         {
@@ -549,11 +556,11 @@ bool reverse_truncated_mateer_gao_dft_test(
           fft.additive_fft_rev_fast_in_place(buffer1, lsz, buffer2, 0);
           count++;
         }
-        while(absolute_time() <= t1 + 1);
-        t1 = (absolute_time() - t1) / count;
+        while((t1 = t.measure()) <= 1);
+        t1 /= count;
         cout << "time of reverse truncated fast VzGG additive DFT:  " << t1 << " sec." << endl;
 
-        t2 = absolute_time();
+        t.set_start();
         count = 0;
         do
         {
@@ -561,12 +568,12 @@ bool reverse_truncated_mateer_gao_dft_test(
           fft_mateer_truncated_reverse<word,s>(&c, buffer1, lsz);
           count++;
         }
-        while(absolute_time() <= t2 + 1);
-        t2 = (absolute_time() - t2) / count;
-        cout << "Time of reverse truncated Mateer-Gao DFT (reference): " <<  t2 << " sec." << endl;
+        while((t2 = t.measure()) <= 1);
+        t2 /= count;
+        cout << "Time of reverse truncated MG DFT (reference): " <<  t2 << " sec." << endl;
       }
 
-      t3 = absolute_time();
+      t.set_start();
       count = 0;
       do
       {
@@ -574,11 +581,11 @@ bool reverse_truncated_mateer_gao_dft_test(
         fft_mateer_truncated_reverse_mult<word,s>(&c, buffer1, lsz);
         count++;
       }
-      while(absolute_time() <= t3 + 1);
-      t3 = (absolute_time() - t3) / count;
-      cout << "Time of reverse truncated Mateer-Gao DFT in multiplicative representation (reference):  " <<  t3 << " sec." << endl;
+      while((t3 = t.measure()) <= 1);
+      t3 /= count;
+      cout << "Time of reverse truncated MG DFT in multiplicative representation (reference):  " <<  t3 << " sec." << endl;
 
-      t4 = absolute_time();
+      t.set_start();
       count= 0;
       do
       {
@@ -587,8 +594,8 @@ bool reverse_truncated_mateer_gao_dft_test(
         for(i = 0; i < sz; i++) buffer1[i] = c.mult_to_gamma(buffer1[i]);
         count++;
       }
-      while(absolute_time() <= t4 + 1);
-      t4 = (absolute_time() - t4) / count;
+      while((t4 = t.measure()) <= 1);
+      t4 /= count;
       cout << "Time of reverse truncated MG DFT in multiplicative representation (reference) + representation conversion:  " << t4 << " sec." << endl;
 
       cout << endl;
@@ -817,25 +824,25 @@ bool decompose_taylor_test(
       p_buffers[i] = urand();
       copy[i] = p_buffers[i];
     }
-    init_time();
     double t1, t2;
-    t1 = absolute_time();
+    timer t;
+    t.set_start();
     decompose_taylor_recursive(0, logblocksize, logtau, large_sz, copy);
-    t2 = absolute_time();
-    t1 = t2 - t1;
+    t1 = t.measure();
+    t.set_start();
     decompose_taylor_iterative(0, logblocksize, logtau, large_sz, p_buffers);
-    t2 = absolute_time() - t2;
+    t2 = t.measure();
     cout << "Iterative time: " << t2 << endl;
     cout << "Recursive time: " << t1 << endl;
     cout << "Taylor decomposition iterative / recursive speed ratio: " << t1 / t2 << endl;
 
     cout << "Reverse Taylor decomposition benchmark" << endl;
-    t1 = absolute_time();
+    t.set_start();
     decompose_taylor_reverse_recursive(0, logblocksize, logtau, large_sz, copy);
-    t2 = absolute_time();
-    t1 = t2 - t1;
+    t1 = t.measure();
+    t.set_start();
     decompose_taylor_reverse_iterative(0, logblocksize, logtau, large_sz, p_buffers);
-    t2 = absolute_time() - t2;
+    t2 = t.measure();
     cout << "Iterative time: " << t2 << endl;
     cout << "Recursive time: " << t1 << endl;
     cout << "Taylor decomposition iterative / recursive speed ratio: " << t1 / t2 << endl;
