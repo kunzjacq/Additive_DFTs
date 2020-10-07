@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
+#include <random>
 
 // can be uint32_t or uint64_t currently, because cantor basis multiplicative representation functions
 // are only available in these sizes
@@ -21,6 +22,7 @@ constexpr uint64_t allocated_buf_size = (1uLL<<(33 - c_b_t<word>::word_logsize))
 constexpr bool verbose = false;
 constexpr bool check_correctness = true;
 constexpr bool benchmark = true;
+constexpr bool full_mg_tests = true;
 constexpr int full_dft_test_size_limit = 16; // do not perform full DFTs above this size
 
 static int test_relations(const cantor_basis<word>& c_b, const word& x);
@@ -69,6 +71,13 @@ static bool decompose_taylor_test(
 
 int main(int UNUSED(argc), char** UNUSED(argv))
 {
+  bool cpu_has_SSE2_and_PCMUL = detect_cpu_features();
+  if(!cpu_has_SSE2_and_PCMUL)
+  {
+    cout << "SSE2 and PCMULQDQ are required. Exiting" << endl;
+    exit(2);
+  }
+
   word* buffers = new word[allocated_buf_size];
   unsigned int log_sz[] = {20, 24};
   unsigned int num_sz = sizeof(log_sz) / sizeof(unsigned int);
@@ -93,7 +102,6 @@ int main(int UNUSED(argc), char** UNUSED(argv))
   }
   bool mateer_gao_error = false;
 
-  bool full_mg_tests = false;
   if(run_tests[2])
   {
     mateer_gao_error |= truncated_mateer_gao_dft_test(
@@ -142,7 +150,11 @@ bool additive_dft_test(
   uint32_t i;
   double t1 = 0, t2 = 0;
   bool local_error, error = false;
-  surand(5);
+
+  mt19937_64 engine(5);
+  uniform_int_distribution<uint32_t> distr;
+  auto draw = [&distr, &engine]() {return distr(engine);};
+
   additive_fft<word> fft(&c);
   cout << endl << endl << "Von zur Gathen - Gerhard additive DFT test" << endl;
   for(unsigned int j = 0; j < num_sz; j++)
@@ -167,7 +179,7 @@ bool additive_dft_test(
       continue;
     }
 
-    const uint64_t blk_offset = urand() & ((1uLL << (c_b_t<word>::n - lsz)) - 1); // must be < (field size) / (sz)
+    const uint64_t blk_offset = draw() & ((1uLL << (c_b_t<word>::n - lsz)) - 1); // must be < (field size) / (sz)
     word* refIn, *refOut, *buffer1;
     uint64_t buf_sz = 1uLL << buf_lsz;
     refIn   = p_buffers;
@@ -178,7 +190,7 @@ bool additive_dft_test(
 
     if(check_correctness)
     {
-      for (i = 0; i <= degree; i++) refIn[i] = static_cast<word>(urand());
+      for (i = 0; i <= degree; i++) refIn[i] = static_cast<word>(draw());
       for(; i < buf_sz; i++) refIn[i] = 0;
       cout << "Evaluating polynomial with direct method on 2**" << check_logsize << " points..." << endl;
       t.set_start();
@@ -224,7 +236,11 @@ bool reverse_dft_test(
 {
   uint32_t i;
   int local_error, error = false;
-  surand(5);
+
+  mt19937_64 engine(5);
+  uniform_int_distribution<uint32_t> distr;
+  auto draw = [&distr, &engine]() {return distr(engine);};
+
   cout << endl << endl << "Reverse Von zur Gathen - Gerhard additive DFT test" << endl;
   for(unsigned int j = 0; j < num_sz; j++)
   {
@@ -233,7 +249,7 @@ bool reverse_dft_test(
     const uint64_t sz = 1uLL << lsz;
     // for this test, the degree must be below the fft subblock size
     uint64_t degree = sz - 2;
-    const uint64_t blk_offset = urand() & ((1uLL << (c_b_t<word>::n - lsz)) - 1); // must be < (field size) / (sz)
+    const uint64_t blk_offset = draw() & ((1uLL << (c_b_t<word>::n - lsz)) - 1); // must be < (field size) / (sz)
     uint32_t word_sz = c_b_t<word>::n;
     additive_fft<word> fft(&c);
     cout << endl << "Testing reverse additive DFT of polynomial of degree " << degree <<
@@ -250,7 +266,7 @@ bool reverse_dft_test(
     refIn   = p_buffers;    //size sz
     buffer1 = refIn + sz;   // size sz
     buffer2 = buffer1 + sz; // size sz >> 2
-    for (i = 0; i <= degree; i++) refIn[i] = static_cast<word>(urand());
+    for (i = 0; i <= degree; i++) refIn[i] = static_cast<word>(draw());
     for(; i < sz; i++) refIn[i] = 0;
 
     if(check_correctness)
@@ -320,6 +336,10 @@ bool truncated_mateer_gao_dft_test(
   uint32_t field_logsz = c_b_t<word>::n;
   constexpr unsigned int s = c_b_t<word>::word_logsize;
 
+  mt19937_64 engine(5);
+  uniform_int_distribution<uint32_t> distr;
+  auto draw = [&distr, &engine]() {return distr(engine);};
+
   word* refIn = nullptr, *refOut = nullptr, *buffer1 = nullptr, *buffer2 = nullptr;
   unsigned int lsz;
   uint64_t degree;
@@ -350,8 +370,7 @@ bool truncated_mateer_gao_dft_test(
     buffer1 = refIn + buf_sz;
     buffer2 = buffer1 + buf_sz;
     refOut  = buffer2 + (buf_sz >> 2);
-    surand(5);
-    for (i = 0; i <= degree; i++) refIn[i] = static_cast<word>(urand());
+    for (i = 0; i <= degree; i++) refIn[i] = static_cast<word>(draw());
     for(; i < sz; i++) refIn[i] = 0;
     if(check_correctness)
     {
@@ -510,8 +529,11 @@ bool reverse_truncated_mateer_gao_dft_test(
     buffer2 = buffer1 + sz;
     refOut  = buffer2 + (sz >> 2);
 
-    surand(5);
-    for(i = 0; i < sz; i++) refIn[i] = static_cast<word>(urand());
+    mt19937_64 engine(5);
+    uniform_int_distribution<uint32_t> distr;
+    auto draw = [&distr, &engine]() {return distr(engine);};
+
+    for(i = 0; i < sz; i++) refIn[i] = static_cast<word>(draw());
     if(check_correctness)
     {
       cout << endl << "Testing reverse truncated Mateer-Gao Fourier Transform " <<
@@ -663,8 +685,12 @@ bool dft_inversion_test(word* p_buffers, cantor_basis<word>& c)
     refIn   = p_buffers + 0 * buf_sz;
     buffer1 = p_buffers + 1 * buf_sz;
     buffer2 = p_buffers + 2 * buf_sz;
-    surand(5);
-    for (i = 0; i <= degree; i++) refIn[i] = static_cast<word>(urand());
+
+    mt19937_64 engine(5);
+    uniform_int_distribution<word> distr;
+    auto draw = [&distr, &engine]() {return distr(engine);};
+
+    for (i = 0; i <= degree; i++) refIn[i] = draw();
     for(; i < sz; i++) refIn[i] = 0;
 
     // choose element according to which the fft will be re-ordered
@@ -780,6 +806,11 @@ bool decompose_taylor_test(
   word* copy = p_buffers + array_sz;
   word* ref  = p_buffers + 2*array_sz;
   uint64_t size_needed = 3*(array_sz<<logstride);
+
+  mt19937_64 engine(5);
+  uniform_int_distribution<word> distr;
+  auto draw = [&distr, &engine]() {return distr(engine);};
+
   if(size_needed > allocated_buf_size)
   {
     cout << "Allocated buffer too small for this test, skipping" << endl;
@@ -797,7 +828,7 @@ bool decompose_taylor_test(
       memset(p_buffers, 0, (sz << logstride) * sizeof(word));
       for(size_t i = 0; i < (sz << logstride); i++)
       {
-        p_buffers[i] = urand();
+        p_buffers[i] = draw();
         copy[i] = p_buffers[i];
         ref[i]  = p_buffers[i];
       }
@@ -821,7 +852,7 @@ bool decompose_taylor_test(
     while((1uL << logblocksize) < large_sz) logblocksize++;
     for(size_t i = 0; i < large_sz; i++)
     {
-      p_buffers[i] = urand();
+      p_buffers[i] = draw();
       copy[i] = p_buffers[i];
     }
     double t1, t2;

@@ -53,7 +53,7 @@ Experiments on an AMD 3900X PC with 64GB of RAM are summarized below.
 
 ![Speed ratio](https://github.com/kunzjacq/Additive_DFTs/blob/master/speed_ratio.png?raw=true)
 
-The polynomial product code uses a fast implementation of multiplication in GF(2<sup>64</sup>) that is implemented with SSE2 and PCLMULQDQ. **The availability of these instruction sets is not checked at runtime**.
+The polynomial product code uses a fast implementation of multiplication in GF(2<sup>64</sup>) that is implemented with SSE2 and PCLMULQDQ. The availability of these instruction sets is checked at the beginning of the test programs.
 
 ## Cantor bases for large field sizes
 
@@ -77,6 +77,5 @@ For target `fft_test`, the binary field and the size of a buffer used in tests d
 Target `product_test` requires a compiled version of gf2x for the target platform to be placed in `lib/` (for Linux) or `lib_mingw/` (for Windows). The finite field used is GF(2<sup>64</sup>).
 
 ## TODO
-  * Check the availability of the instructions used (SSE2, PCLMULQDQ) at runtime, before attempting to use them.
   * Improve the memory usage of the product function. If v is the storage required for the output polynomial rounded to the next power of two, the additional memory required can be reduced from 4v to 3v at no computational cost. It can be further reduced with an increase of computation time.
 

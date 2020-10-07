@@ -63,7 +63,7 @@ add_executable(cantor_basis_test
 
 add_executable(fft_test
  "fft_test.cpp"
- "libfft/utils.cpp"
+ "utils.cpp"
  "libfft/additive_fft.cpp"
  "libfft/mg.cpp"
  "libcantor/cantor_basis_bare.cpp"
@@ -72,8 +72,8 @@ add_executable(fft_test
 
 add_executable(product_test
  "product_test.cpp"
+ "utils.cpp"
  "libfft/mg.cpp"
- "libfft/utils.cpp"
  )
 
 
