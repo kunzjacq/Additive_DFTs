@@ -12,15 +12,6 @@
 #include "gf2x.h"
 
 using namespace std;
-using namespace std::chrono;
-
-#if defined(__cplusplus)
-#define UNUSED(x)
-#elif defined(__GNUC__)
-#define UNUSED(x)       x __attribute__((unused))
-#else
-#define UNUSED(x)       x
-#endif
 
 constexpr bool benchmark = true;
 constexpr bool do_gf2x = false;
