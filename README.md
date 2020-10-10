@@ -17,37 +17,40 @@ Mateer-Gao DFT (and crucially, its truncated implementation) is used to implemen
 
 The DFT approach is tested by multiplying polynomials of degree 2<sup>u-1</sup> - 1 for values of u s.t. the computations fit into memory. It is slower than gf2x for small sizes (u < 20), and faster beyond that. It also appears to use less memory for large sizes. Beyond the buffer to store the result, the Mateer-Gao product function uses 4 times the memory required for the result size, rounded to the next power of two.
 
-Experiments on an AMD 3900X PC with 64GB of RAM are summarized below.
+Both a variant that leaves its arguments unchanged and an in-place product variant are provided. The in-place variant uses less memory and is slightly faster.
 
-|u = output log2 size|gf2x product time (sec.)|Mateer-Gao product time (sec.)|
+Experiments on an AMD 3900X PC with 64GB of RAM are summarized below. Results are for the in-place product variant.
+
+|Output log2 size|gf2x product time (sec.)|Mateer-Gao product time (sec.)|
 |:----:|:----:|:----:|
-|10| 1.04702e-07| 1.55653e-06|
-|11| 2.68164e-07| 2.89191e-06|
-|12| 7.27469e-07| 6.32747e-06|
-|13| 2.1147e-06| 6.86151e-06|
-|14| 3.01368e-06| 1.5177e-05|
-|15| 9.6984e-06| 3.36861e-05|
-|16| 2.74011e-05| 7.2759e-05|
-|17| 7.94745e-05| 0.00015739|
-|18| 0.000217923| 0.000341152|
-|19| 0.000608785| 0.000730794|
-|20| 0.00187449| 0.00161085|
-|21| 0.00383994| 0.00344927|
-|22| 0.00792871| 0.00736224|
-|23| 0.0173911| 0.0157705|
-|24| 0.0446058| 0.0321648|
-|25| 0.0897099| 0.0685952|
-|26| 0.212486| 0.145032|
-|27| 0.424994| 0.316625|
-|28| 1.03537| 0.686158|
-|29| 2.60567| 1.45992|
-|30| 4.4542| 3.08745|
-|31| 11.9174| 6.4638|
-|32| 26.4949| 13.6163|
-|33| 101.108| 28.7695|
-|34| 160.492| 60.9985|
-|35| 678.952| 129.156|
-|36| not enough memory| 271.887|
+|10| 1.09431e-07| 1.38589e-06|
+|11| 2.62482e-07| 2.52093e-06|
+|12| 7.15466e-07| 5.61545e-06|
+|13| 2.03284e-06| 7.47628e-06|
+|14| 2.99103e-06| 1.4035e-05|
+|15| 9.9116e-06| 3.16259e-05|
+|16| 2.81112e-05| 6.83873e-05|
+|17| 8.04921e-05| 0.00014863|
+|18| 0.000221933| 0.000323124|
+|19| 0.000619341| 0.0006945|
+|20| 0.00191297| 0.00149074|
+|21| 0.00386728| 0.00319287|
+|22| 0.00798317| 0.00689116|
+|23| 0.0175718| 0.0147847|
+|24| 0.044663| 0.0310474|
+|25| 0.0901284| 0.0653282|
+|26| 0.214669| 0.138846|
+|27| 0.431616| 0.299029|
+|28| 1.03791| 0.651955|
+|29| 2.62693| 1.39348|
+|30| 4.54754| 2.96513|
+|31| 12.119| 6.23943|
+|32| 27.0756| 13.1931|
+|33| 101.915| 27.8231|
+|34| 161.692| 59.1067|
+|35| 671.035| 124.084|
+|36| not enough memory| 263.476|
+|37| not enough memory| 558.934|
 
 ![Execution times](https://github.com/kunzjacq/Additive_DFTs/blob/master/times.png?raw=true)
 
@@ -76,6 +79,4 @@ For target `fft_test`, the binary field and the size of a buffer used in tests d
 
 Target `product_test` requires a compiled version of gf2x for the target platform to be placed in `lib/` (for Linux) or `lib_mingw/` (for Windows). The finite field used is GF(2<sup>64</sup>).
 
-## TODO
-  * Improve the memory usage of the product function. If v is the storage required for the output polynomial rounded to the next power of two, the additional memory required can be reduced from 4v to 3v at no computational cost. It can be further reduced with an increase of computation time.
 
