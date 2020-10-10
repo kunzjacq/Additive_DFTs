@@ -9,9 +9,9 @@
 
 using namespace std;
 
-// to use the version of Mateer-Gao DFT where the log block size is a template parameter, instead
-// of the regular one below.
-// surprisingly, the templatized version is slower.
+// uncomment to use the version of Mateer-Gao DFT where the log block size is a template parameter,
+// instead of the regular one below. Surprisingly, the templatized version is slower than the
+// regular implementation.
 // #define USE_TEMPLATIZED
 
 /**
@@ -119,8 +119,6 @@ inline void mg_core(
     const uint64_t* offsets_mult,
     unsigned int logsize,
     bool first_taylor_done)
-// log2 size of each stride to be processed;
-// should be <= 2**s, the input is assumed to be of size 2**logsize and only the 2**logsize first output values are computed
 {
   if constexpr(s == 0)
   {
