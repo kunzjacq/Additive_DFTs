@@ -21,7 +21,10 @@
  * @param d2
  * degree of 2nd polynomial.
  */
-void mg_binary_polynomial_multiply(uint8_t *p1, uint8_t *p2, uint8_t *result, uint64_t d1, uint64_t d2);
+void mg_binary_polynomial_multiply(uint64_t *p1, uint64_t *p2, uint64_t *result, uint64_t d1, uint64_t d2);
+
+
+void mg_binary_polynomial_multiply_in_place (uint64_t *p1, uint64_t *p2, uint64_t d1, uint64_t d2);
 
 #if 0
 /**
@@ -237,10 +240,10 @@ static inline void eval_degree1(const uint64_t val, uint64_t* p)
  * @param logsize
  * @param p
  */
-template<unsigned int logstride, unsigned int t>
+template<unsigned int logstride, unsigned int t, class T>
 inline void mg_decompose_taylor_recursive(
     unsigned int logsize,
-    uint64_t* p)
+    T* p)
 {
   static_assert(t >= 1);
   assert(logsize > t && logsize <= 2*t);
@@ -248,14 +251,14 @@ inline void mg_decompose_taylor_recursive(
   uint64_t delta_s   = 1uLL << (logstride + logsize - 1 - t); // logn - 1 - t >= 0
   const uint64_t n_s = 1uLL  << (logstride + logsize);
   const uint64_t m_s = n_s >> 1;
-  uint64_t* q = p + delta_s - m_s;
+  T* q = p + delta_s - m_s;
   // m_s > 0, hence the loop below is not infinite
   for(uint64_t i = n_s - 1; i > m_s - 1; i--) q[i] ^= p[i];
 
   if(logsize > t + 1)
   {
-    mg_decompose_taylor_recursive<logstride, t>(logsize - 1, p);
-    mg_decompose_taylor_recursive<logstride, t>(logsize - 1, p + m_s);
+    mg_decompose_taylor_recursive<logstride, t, T>(logsize - 1, p);
+    mg_decompose_taylor_recursive<logstride, t, T>(logsize - 1, p + m_s);
   }
 }
 

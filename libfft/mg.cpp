@@ -9,6 +9,9 @@
 
 using namespace std;
 
+static void expand_in_place(uint64_t* p, uint64_t d, uint64_t fft_size);
+static void expand(uint64_t* p, uint64_t* res, uint64_t d, uint64_t fft_size);
+
 // uncomment to use the version of Mateer-Gao DFT where the log block size is a template parameter,
 // instead of the regular one below. Surprisingly, the templatized version is slower than the
 // regular implementation.
@@ -136,7 +139,7 @@ inline void mg_core(
       // on input: there are 2**'logstride' interleaved series of size 'eta' = 2**(2*logsize-t);
       if(!first_taylor_done)
       {
-        mg_decompose_taylor_recursive<logstride,t>(logsize, poly);
+        mg_decompose_taylor_recursive<logstride,t, uint64_t>(logsize, poly);
       }
       // fft on columns
       // if logsize >= t, each fft should process 2**(logsize - t) values
@@ -167,11 +170,14 @@ inline void mg_core(
  * @brief mg_smalldegree
  * computes one truncated DFTs of an input polynomial of degree < 2**logsizeprime.
  * 2**logsize output values are computed, with logsizeprime <= logsize.
- * If logsizeprime < logsize, this function is more efficient than a direct call to mg_aux.
+ * If logsizeprime < logsize, this function is more efficient than a direct call to mg_core.
+ * the result is nevertheless the same as
+ * mg_core<s, 0>(p, offsets_mult, logsize, false);
+ * with offsets_mults[] all set to 0.
  * @param s
  * a recursion parameter s.t. logsize <= 2**s.
  * @param mult_pow_table
- * see the same argument for mg_aux.
+ * see the same argument for mg_core.
  * @param p
  * the input and output array, of size 2**logsize.
  * @param logsizeprime
@@ -196,7 +202,7 @@ void mg_smalldegree(
       return;
     }
     constexpr unsigned int t = 1u << (s - 1);
-    mg_decompose_taylor_recursive<0u, t>(logsizeprime, p);
+    mg_decompose_taylor_recursive<0u, t, uint64_t>(logsizeprime, p);
     for(uint64_t i = 1; i < 1uLL << (logsize - logsizeprime); i++)
     {
       uint64_t* q = p + (i << logsizeprime);
@@ -208,11 +214,11 @@ void mg_smalldegree(
 
     for(uint64_t i = 0; i < 1uLL << (logsize - logsizeprime); i++)
     {
-      //offset in beta repr: i << logsizeprime
+      uint64_t* q = p + (i << logsizeprime);
 #ifdef USE_TEMPLATIZED
       mgt_core<s, 0, true>(p + (i << logsizeprime), offsets_mult, logsizeprime);
 #else
-      mg_core<s, 0>(p + (i << logsizeprime), offsets_mult, logsizeprime, true);
+      mg_core<s, 0>(q, offsets_mult, logsizeprime, true);
 #endif
       const long unsigned int h = _mm_popcnt_u64(i^(i+1));
       // goal: xor to offsets_mult[j] to the multiplicative representation w of the value
@@ -243,20 +249,77 @@ void mg_smalldegree(
   }
   else
   {
-    // s == 0, logsizeprime = 0 or 1
+    // s == 0, logsize = 0 or 1. do not optimize.
     uint64_t offsets_mult[1];
     offsets_mult[0] = 0;
 #ifdef USE_TEMPLATIZED
-    mgt_core<0, 0, false>(p, offsets_mult, logsizeprime);
+    mgt_core<0, 0, false>(p, offsets_mult, logsize);
 #else
-    mg_core<0, 0>(p, offsets_mult, logsizeprime, false);
+    mg_core<0, 0>(p, offsets_mult, logsize, false);
 #endif
+  }
+}
+
+template <unsigned int s>
+void mg_smalldegree_with_buf(
+    uint64_t* p, // binary polynomial, unexpanded, of degree < 2**logsize_prime **once expanded**
+    unsigned int logsizeprime, // log2 bound on the polynomial number of coefficents, <= logsize
+    unsigned int logsize, // size of the DFT to be computed, <= 2**(2**s)
+    uint64_t* main_buf // buffer of size 2**logsize, whose elements wil be termwise multiplied by DFT of p
+    )
+{
+  if constexpr(s > 0)
+  {
+    if(logsizeprime <= (1u << (s-1)))
+    {
+      mg_smalldegree_with_buf<s-1>(p, logsizeprime, logsize, main_buf);
+      return;
+    }
+    // logsizeprime > 2**(s-1) => logsizeprime > 1
+
+    uint64_t* buf = new uint64_t[1uLL << logsizeprime];
+    unique_ptr<uint64_t[]> _(buf);
+
+    constexpr unsigned int t = 1u << (s - 1);
+
+    const uint64_t szp = 1uLL << logsizeprime;
+    // the natural order of operations is to expand p (expand every 32-bit word into q 64-bit word),
+    // then apply mg_decompose_taylor_recursive on 64-bit words
+    // this is equivalent to doing mg_decompose_taylor_recursive on 32-bit words, then expanding
+    mg_decompose_taylor_recursive<0u, t, uint32_t>(logsizeprime, (uint32_t*)p);
+
+    uint64_t offsets_mult[1 << s];
+    for(int i = 0; i < (1 << s); i++) offsets_mult[i] = 0;
+
+    for(uint64_t i = 0; i < 1uLL << (logsize - logsizeprime); i++)
+    {
+      expand(p, buf, szp * 32 - 1, szp);
+      mg_core<s, 0>(buf, offsets_mult, logsizeprime, true);
+      product_batch(main_buf + (i << logsizeprime), buf, logsizeprime);
+      const long unsigned int h = _mm_popcnt_u64(i^(i+1));
+      for(unsigned int j = 0; j < min<unsigned long>(1 << s, h + logsizeprime); j++)
+      {
+        offsets_mult[j] ^= beta_over_mult_cumulative[h + logsizeprime - j];
+      }
+      for(unsigned int j = 0; j < min<unsigned long>(1 << s, logsizeprime); j++)
+      {
+        offsets_mult[j] ^= beta_over_mult_cumulative[logsizeprime - j];
+      }
+    }
+  }
+  else
+  {
+    // s == 0, logsize = 0 or 1. do not optimize.
+    uint64_t offsets_mult[1];
+    offsets_mult[0] = 0;
+    mg_core<0, 0>(p, offsets_mult, logsize, false);
+    for(int i = 0; i < 1 << logsize; i++) main_buf[i] = product(main_buf[i], p[i]);
   }
 }
 
 /**
  * @brief mg_reverse_core
- * Reverse of mg_core. See mg_aux for argument description.
+ * Reverse of mg_core. See mg_core for argument description.
  */
 template <int s, int logstride>
 void mg_reverse_core(
@@ -303,7 +366,28 @@ void mg_reverse_core(
   }
 }
 
-static uint64_t expand(uint8_t* p, uint64_t* res, uint64_t d, size_t fft_size)
+static void expand_in_place(uint64_t* p, uint64_t d, uint64_t fft_size)
+{
+  auto source = reinterpret_cast<uint32_t*>(p);
+  constexpr int num_bits_half = 32;
+  uint64_t dw = d / num_bits_half + 1;
+  uint64_t j = 0;
+  // little endian
+  for(j = 0; j < dw; j++) p[dw - 1 - j] = source[dw - 1 - j];
+  for(; j < fft_size;j++) p[j] = 0;
+}
+
+static void contract_in_place(uint64_t* buf, uint64_t d)
+{
+  const size_t bound = d / 32 + 1;
+  uint32_t* q = reinterpret_cast<uint32_t*>(buf);
+  for(uint64_t i = 1; i < bound; i++)
+  {
+    q[i] = q[2*i - 1] ^ q[2*i];
+  }
+}
+
+static void expand(uint64_t* p, uint64_t* res, uint64_t d, uint64_t fft_size)
 {
   auto source = reinterpret_cast<uint32_t*>(p);
   constexpr int num_bits_half = 32;
@@ -312,7 +396,6 @@ static uint64_t expand(uint8_t* p, uint64_t* res, uint64_t d, size_t fft_size)
   // little endian
   for(j = 0; j < dw; j++) res[j] = source[j];
   for(; j < fft_size;j++) res[j] = 0;
-  return dw;
 }
 
 static void contract(uint64_t* buf, uint8_t* p, uint64_t d)
@@ -321,52 +404,101 @@ static void contract(uint64_t* buf, uint8_t* p, uint64_t d)
   const size_t bound = d / bits_per_half_uint64_t + 1;
   uint64_t* dest_even = reinterpret_cast<uint64_t*>(p);
   uint64_t* dest_odd  = reinterpret_cast<uint64_t*>(p + (bits_per_half_uint64_t >> 3));
-  for(uint64_t i = 0; i < d/8+1; i++) p[i] = 0;
+  for(uint64_t i = 0; i < bound >> 1; i++) dest_even[i] = 0;
   for(uint64_t i = 0; i < bound; i++)
   {
-    if((i & 1) == 0)
-    {
-      dest_even[i >> 1] ^= buf[i];
-    }
-    else
-    {
-      dest_odd[i >> 1]  ^= buf[i];
-    }
+    if((i & 1) == 0) dest_even[i >> 1] ^= buf[i];
+    else             dest_odd [i >> 1] ^= buf[i];
   }
 }
 
-void mg_binary_polynomial_multiply(uint8_t* p1, uint8_t* p2, uint8_t* result, uint64_t d1, uint64_t d2)
+void mg_binary_polynomial_multiply(uint64_t* p1, uint64_t* p2, uint64_t* result, uint64_t d1, uint64_t d2)
 {
   constexpr unsigned int s = 6;
   uint64_t offsets_mult[1 << s];
   for(int i = 0; i < (1 << s); i++) offsets_mult[i] = 0;
-  unsigned int logsize = 1;
-  while((1uLL<<logsize) * 32 < (d1 + d2 + 1)) logsize++;
-  uint64_t* b1 = new uint64_t[1uLL<<logsize];
+  unsigned int logsize_result = 1;
+  while((1uLL << logsize_result) * 32 < (d1 + d2 + 1)) logsize_result++;
+  uint64_t* b1 = new uint64_t[1uLL<<logsize_result];
   unique_ptr<uint64_t[]> _1(b1);
-  uint64_t* b2 = new uint64_t[1uLL<<logsize];
+  uint64_t* b2 = new uint64_t[1uLL<<logsize_result];
   unique_ptr<uint64_t[]> _2(b2);
-  const uint64_t sz = 1uLL << logsize;
-  uint64_t w1 = expand(p1, b1, d1, sz);
-  uint64_t w2 = expand(p2, b2, d2, sz);
-  int logsizeprime = logsize;
-  while(1uLL << logsizeprime >= 2 * w1) logsizeprime--;
-  mg_smalldegree<s>(b1, logsizeprime, logsize);
-  logsizeprime = logsize;
-  while(1uLL << logsizeprime >= 2 * w2) logsizeprime--;
-  mg_smalldegree<s>(b2, logsizeprime, logsize);
-  if(logsize < 2)
+  const uint64_t sz = 1uLL << logsize_result;
+#if 0
+  expand(p1, b1, d1, sz);
+  expand(p2, b2, d2, sz);
+#else
+  for(uint64_t i = 0; i < (d1 + 63) / 64; i++) b1[i] = p1[i];
+  expand_in_place(b1, d1, sz);
+  for(uint64_t i = 0; i < (d2 + 63) / 64; i++) b2[i] = p2[i];
+  expand_in_place(b2, d2, sz);
+#endif
+
+  // size of p1, in 32-bit words.
+  unsigned int logsize_1 = 0;
+  while((1uLL << logsize_1) * 32 < (d1 + 1)) logsize_1++;
+
+  // size of p2, in 32-bit words.
+  unsigned int logsize_2 = 0;
+  while((1uLL << logsize_2) * 32 < (d2 + 1)) logsize_2++;
+
+  mg_smalldegree<s>(b1, logsize_1, logsize_result);
+  mg_smalldegree<s>(b2, logsize_2, logsize_result);
+  if(logsize_result < 2)
   {
     for(size_t i = 0; i < sz; i++) b1[i] = product(b1[i], b2[i]);
   }
   else
   {
-    product_batch(b1, b2, logsize);
+    product_batch(b1, b2, logsize_result);
   }
 #ifdef USE_TEMPLATIZED
   mgt_reverse_core<s,0>(b1, offsets_mult, logsize);
 #else
-  mg_reverse_core<s,0>(b1, offsets_mult, logsize);
+  mg_reverse_core<s,0>(b1, offsets_mult, logsize_result);
 #endif
+
+#if 0
   contract(b1, result, d1 + d2);
+#else
+  contract_in_place(b1, d1 + d2);
+  for(uint64_t i = 0; i < (d1 + d2 + 63) / 64; i++) result[i] = b1[i];
+#endif
+}
+
+
+/**
+ * multiply p1 by p2.
+ * Assumes p1 can hold twice the size of the result polynomial, rounded to the next power of 2.
+ * Assumes p2 can hold the size of the second polynomial, rounded to the next power of 2.
+ * result is returned in p1, p2 is modified during computations.
+ * the function allocatesi internally a buffer twice the size of the buffer p2.
+ * Since the size of p1 only depends on the result size, p2 should be set to the smallest degree
+ * polynomial to be multiplied.
+ */
+void mg_binary_polynomial_multiply_in_place (uint64_t* p1, uint64_t* p2, uint64_t d1, uint64_t d2)
+{
+  constexpr unsigned int s = 6;
+  uint64_t offsets_mult[1 << s];
+  for(int i = 0; i < (1 << s); i++) offsets_mult[i] = 0;
+  // size of the result, in 32-bit words.
+  unsigned int logsize_result = 0;
+  while((1uLL << logsize_result) * 32 < (d1 + d2 + 1)) logsize_result++;
+
+  // size of p1, in 32-bit words.
+  unsigned int logsize_1 = 0;
+  while((1uLL << logsize_1) * 32 < (d1 + 1)) logsize_1++;
+
+  // size of p2, in 32-bit words.
+  unsigned int logsize_2 = 0;
+  while((1uLL << logsize_2) * 32 < (d2 + 1)) logsize_2++;
+
+  const uint64_t sz_result = 1uLL << logsize_result;
+  expand_in_place(p1, d1, sz_result);
+  mg_smalldegree<s>((uint64_t*) p1, logsize_1, logsize_result);
+
+  mg_smalldegree_with_buf<s>(p2, logsize_2, logsize_result, p1);
+
+  mg_reverse_core<s,0>(p1, offsets_mult, logsize_result);
+  contract_in_place(p1, d1 + d2);
 }
