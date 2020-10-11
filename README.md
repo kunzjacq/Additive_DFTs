@@ -15,9 +15,10 @@ This project is about experimenting with these DFT algorithms. Reference impleme
 
 Mateer-Gao DFT (and crucially, its truncated implementation) is used to implement fast multiplication of binary polynomials (see https://cr.yp.to/f2mult.html for an outline of the method used. DFTs are used to evaluate the polynomials, then the values obtained for both polynomials are multiplied pointwise, and finally the product is built from the values with an inverse DFT). It is tested and benched against the fastest product implementation known to the author, from library `gf2x` (https://gforge.inria.fr/projects/gf2x/).
 
-The DFT approach is tested by multiplying polynomials of degree 2<sup>u-1</sup> - 1 for values of u s.t. the computations fit into memory. It is slower than gf2x for small sizes (u < 20), and faster beyond that. It also appears to use less memory for large sizes. Beyond the buffer to store the result, the Mateer-Gao product function uses 4 times the memory required for the result size, rounded to the next power of two.
+The DFT approach is tested by multiplying polynomials of degree 2<sup>u-1</sup> - 1 for values of u s.t. the computations fit into memory. It is slower than gf2x for small sizes (u < 20), and faster beyond that. It also uses less memory for large sizes. 
+Both an in-place and a not-in-place product variant are provided. The in-place variant uses less memory and is slightly faster.
 
-Both a variant that leaves its arguments unchanged and an in-place product variant are provided. The in-place variant uses less memory and is slightly faster.
+### Product computation time results
 
 Experiments on an AMD 3900X PC with 64GB of RAM are summarized below. Results are for the in-place product variant.
 
@@ -56,7 +57,15 @@ Experiments on an AMD 3900X PC with 64GB of RAM are summarized below. Results ar
 
 ![Speed ratio](https://github.com/kunzjacq/Additive_DFTs/blob/master/speed_ratio.png?raw=true)
 
-The polynomial product code uses a fast implementation of multiplication in GF(2<sup>64</sup>) that is implemented with SSE2 and PCLMULQDQ. The availability of these instruction sets is checked at the beginning of the test programs.
+### Product memory requirements
+
+Besides the buffer to store the inputs and the result, the out-of-place Mateer-Gao product function uses 4 times the memory required for the result size, rounded to the next power of two. For instance, when doing a product of two polynomials of degree 2<sup>36</sup>-1, each input polynomial is 8GB, the result is 16GB, and a buffer of size 4 \* 16GB = 64GB is needed; therefore 96GB of memory are required in total. More generally, if the result uses  2<sup>k-1</sup> < n ≤ 2<sup>k</sup> = m bytes, the in-place product function uses 6m bytes including arguments and result storage.
+
+The in-place variant stores the result into one of the polynomials that are multiplied. The array storing one of the inputs and the result must be twice the size of the result rounded to the next power of two; an additional buffer twice the size of the other input polynomial, rounded to the next power of two, is allocated. When doing a product of two polynomials of degree 2<sup>36</sup>-1, each input polynomial is 8GB, the result is 16GB. The buffer size for the result must be 2 \* 16GB = 32GB; an additional buffer of size 2 \* 8GB = 16GB is needed. Overall 8+16+32GB = 56GB of RAM are needed, which is much better than the out-of-place variant. More generally, if the result uses 2<sup>k-1</sup> < n ≤ 2<sup>k</sup> = m bytes bytes, assuming the largest degree polynomial is used as the target for the product (which implies that the other one has size ≤ m/2), the in-place product function uses 3.5m bytes of RAM including arguments and result storage.
+
+### Product CPU requirements
+
+The polynomial product code uses a fast implementation of multiplication in GF(2<sup>64</sup>) that uses SSE2 and PCLMULQDQ instruction sets. Their availability is checked at the beginning of the test programs.
 
 ## Cantor bases for large field sizes
 
