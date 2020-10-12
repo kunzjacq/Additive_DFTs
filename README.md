@@ -59,9 +59,13 @@ Experiments on an AMD 3900X PC with 64GB of RAM are summarized below. Results ar
 
 ### Product memory requirements
 
-Besides the buffer to store the inputs and the result, the out-of-place Mateer-Gao product function uses 4 times the memory required for the result size, rounded to the next power of two. For instance, when doing a product of two polynomials of degree 2<sup>36</sup>-1, each input polynomial is 8GB, the result is 16GB, and a buffer of size 4 \* 16GB = 64GB is needed; therefore 96GB of memory are required in total. More generally, if the result uses  2<sup>k-1</sup> < n ≤ 2<sup>k</sup> = m bytes, the in-place product function uses 6m bytes including arguments and result storage.
+Assume that a product q = p<sub>1</sub> p<sub>2</sub> is computed, and that the storage of p<sub>1</sub> and p<sub>2</sub> uses n bytes, 2<sup>k-1</sup> < n ≤ 2<sup>k</sup> = m. Then the storage of q also uses at most n bytes. 
 
-The in-place variant stores the result into one of the polynomials that are multiplied. The array storing one of the inputs and the result must be twice the size of the result rounded to the next power of two; an additional buffer twice the size of the other input polynomial, rounded to the next power of two, is allocated. When doing a product of two polynomials of degree 2<sup>36</sup>-1, each input polynomial is 8GB, the result is 16GB. The buffer size for the result must be 2 \* 16GB = 32GB; an additional buffer of size 2 \* 8GB = 16GB is needed. Overall 8+16+32GB = 56GB of RAM are needed, which is much better than the out-of-place variant. More generally, if the result uses 2<sup>k-1</sup> < n ≤ 2<sup>k</sup> = m bytes bytes, assuming the largest degree polynomial is used as the target for the product (which implies that the other one has size ≤ m/2), the in-place product function uses 3.5m bytes of RAM including arguments and result storage.
+Besides the buffer to store the inputs and the result, the out-of-place Mateer-Gao product function uses buffers of size 4m. Overall, it therefore needs M = 2n + 4m RAM bytes, 5m < M ≤ 6m.
+
+The in-place variant stores the result q into the input buffer for p<sub>1</sub>. This array must be of size 2m; an additional buffer twice the storage size of p<sub>2</sub>, rounded to the next power of two, is allocated. Exchanging p<sub>1</sub> and p<sub>2</sub> if necessary, we have that deg(p<sub>2</sub>) ≤ deg(p<sub>1</sub>). Then the storage size for p<sub>2</sub> is ≤ m/2, and the in-place product function uses at most m/2 + 2m + 2\* m/2 = 3.5m bytes of RAM, which is much better than the out-of-place function.
+
+As an example, when processing the largest example above, i.e. a product of two polynomials of degree 2<sup>36</sup>-1, each input polynomial is 8GB, and the result is 16GB. With the out-of-place variant, a buffer of size 4 \* 16GB = 64GB is additionally needed, for a total of 96GB. With the in-place variant, the buffer size for the result must be 2 \* 16GB = 32GB; an additional buffer of size 2 \* 8GB = 16GB is needed. Overall 8+16+32GB = 56GB of RAM are needed.
 
 ### Product CPU requirements
 
