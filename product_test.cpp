@@ -1,7 +1,7 @@
 #include <cstdint>
 #include <iostream>
-#include <random>
-#include <memory>
+#include <random> // for mt19937_64, uniform_int_distribution<>
+#include <memory> // for unique_ptr
 
 #include "timer.h"
 #include "mg.h"

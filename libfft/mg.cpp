@@ -5,26 +5,39 @@
 
 #include <immintrin.h>
 
-// uncomment to use the version of Mateer-Gao DFT where the log block size is a template parameter,
-// (see mg_t.h). Surprisingly, the templatized version is slower than the regular implementation.
-// #define USE_TEMPLATIZED
-
-#ifdef USE_TEMPLATIZED
-#include "mg_t.h"
-#endif
-
 using namespace std;
 
-/**
- * both 'contract' and 'expand' can be used with dest = source,
- * or with disjoint dest and source arrays. Their implementation is little-endian only.
- **/
+/** beta_over_mult_cumulative[i] = sum_j = 0 ... i - 1 beta_i
+ * in multplicative representation, i.e. in GF(2**64) as described in
+ * function 'product'. beta_i refers to the beta basis in Mateer-Gao algorithm.
+ */
+static constexpr uint64_t beta_over_mult_cumulative[] = {
+  0x0,               0x1,               0x19c9369f278adc03,0xb848d14948d52b96,
+  0xfc39a481a127aa9d,0xfd02a1ae1c3b51c0,0x4ae8fb39198c2000, 0xc9e636090aafc01,
+  0x160266090832ba8e,0x0698fbda5886d236,0x1ed3c0aa2cc028ce,0xa3f2c7d05d050384,
+  0x5ebd73abdf25bd68,0xba04271ef7f3b56a,0x49d80fdbb0b388c2,0xa468c40881568f18,
+  0xf6e2dc67ed2203db,0xf4466dee270e5882,0xf6dc10cf295d7ed4,0x5b7fd08b070abd39,
+  0xa7fe9595d9b22788,0x4738e503d11d72f5,0xb49e3d1bb4227e58,0xf2b4dbb998c79ed7,
+  0xecd3a59c347e16e3,0xe1cfc3d8505a6e77,0xea670e1a534323cf,0x4d4ce92c49c90db4,
+  0xa5b54a92be769797,0x5870d894c2f1596c,0xe69061ed22d5070 ,0xbe658be205cd5c43,
+  0x516e45eea5755655,0xaac030ebd33319f8,0x495ed9b5fabbaf08,0x1695161ab572f7b4,
+  0xadacad2c4e48cdda,0xe45844b9ebae6c40,0x5d36626173c3a040,0xa0264fa8d4864a8e,
+  0x5c071e3bcdce3e37,0x13303c7fe8fafb31,0x07f46edf72e59233,0x029ef3c53091b2d8,
+  0x1ed4dd260daede14,0x153ffd2658c0f389,0xb31cf4415e740389,0x5af7b780a8b08387,
+  0x151dffedf9e1ddbc,0xb79973326bd3fbdf,0x42a28f58bdc05714,0x1fb6289097568c04,
+  0x140379b253de3f29,0x010d3f8d779ee957,0xb33e1fc53acedca3,0xe8fd5ebe929529ba,
+  0xf8387e3f53d81dad,0x4e34099e141594fe,0x15cc6fee9e51daf7,0x0185be136e4c8181,
+  0xb3b50cfd392bc4b1,0xf54ebfb28d2f23cc,0xebeea0f9242d3352,0xe667293b4ee307b4,
+  0x6d1861bfc6fbe3e8
+};
 
 /**
  * @brief expand
  * Space each 32-bit word of 'source' with a null 32-bit word into 'dest'.
  * Pad the result with zeros up to 'fft_size' 64-bit words.
  * 'source' is a binary polyomial of degree 'd', that uses with 'd' / 32 + 1 32-bit words.
+ * Can be used with dest = source, or with disjoint dest and source arrays.
+ * Implementation is little-endian only.
  * @param dest
  * destination 64-bit array
  * @param source
@@ -48,6 +61,8 @@ static void expand(uint64_t* dest, uint64_t* source, uint64_t d, uint64_t fft_si
  * @brief contract
  * Contract a polynomial over GF(2**64), xoring each upper half of each 64-bit with the lower
  * half of the next 64-bit word.
+ * Can be used with dest = source, or with disjoint dest and source arrays.
+ * Implementation is little-endian only.
  * @param dest
  * 64-bit destination array
  * @param source
@@ -276,11 +291,7 @@ void mg_smalldegree(
     for(uint64_t i = 0; i < 1uLL << (logsize - logsizeprime); i++)
     {
       uint64_t* q = p + (i << logsizeprime);
-#ifdef USE_TEMPLATIZED
-      mgt_core<s, 0, true>(p + (i << logsizeprime), offsets_mult, logsizeprime);
-#else
       mg_core<s, 0>(q, offsets_mult, logsizeprime, true);
-#endif
       const long unsigned int h = _mm_popcnt_u64(i^(i+1));
       // goal: xor to offsets_mult[j] to the multiplicative representation w of the value
       // v = (i^(i+1) << logsizeprime) >> j in beta representation,
@@ -313,11 +324,7 @@ void mg_smalldegree(
     // s == 0, logsize = 0 or 1. do not optimize.
     uint64_t offsets_mult[1];
     offsets_mult[0] = 0;
-#ifdef USE_TEMPLATIZED
-    mgt_core<0, 0, false>(p, offsets_mult, logsize);
-#else
     mg_core<0, 0>(p, offsets_mult, logsize, false);
-#endif
   }
 }
 
