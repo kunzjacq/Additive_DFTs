@@ -9,7 +9,7 @@ message("CMAKE_SYSTEM_NAME: ${CMAKE_SYSTEM_NAME}")
 set(CMAKE_VERBOSE_MAKEFILE on)
 
 option(LTO "Link-time optimization" ON)
-option(USE_BOOST "Link-time optimization" ON)
+option(USE_BOOST "Use Boost for large integers" OFF)
 
 if(MINGW)
   message("Windows/MinGW detected")

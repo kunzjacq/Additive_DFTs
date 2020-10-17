@@ -16,6 +16,42 @@ using namespace std;
 
 bool detect_cpu_features();
 
+/**
+ * @brief extract
+ * Extracts at most 'extract_sz' values from 'tbl' of size 'sz'  in front, middle and back
+ * @param tbl
+   source data
+ * @param sz
+ * source data size
+ * @param extract
+ * destination data
+ * @param extract_sz
+ * number of values to be copied
+ * @return
+ */
+template <class T>
+unsigned int extract(T* tbl, uint64_t sz, T* extract, uint32_t extract_sz)
+{
+  if(sz <= extract_sz)
+  {
+    for(unsigned int i = 0; i < sz; i++) extract[i] = tbl[i];
+    return (uint32_t) sz;
+  }
+  else
+  {
+    uint32_t a = extract_sz / 3;
+    uint32_t c = extract_sz - 2*a;
+    uint32_t i = 0;
+    uint64_t j = 0;
+    for(; i < a; i++, j++) extract[i] = tbl[j];
+    j = sz/2;
+    for(; i < 2*a; i++, j++) extract[i] = tbl[j];
+    j = sz - c;
+    for(; i < extract_sz; i++, j++) extract[i] = tbl[j];
+    return extract_sz;
+  }
+}
+
 template <class word>
 void print_value(const word& p_data)
 {

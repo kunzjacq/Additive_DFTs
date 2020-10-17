@@ -1,7 +1,5 @@
 #include <cstdint>
 #include <iostream>
-#include <chrono>
-#include <cmath>
 #include <random>
 #include <memory>
 
@@ -13,33 +11,24 @@
 
 using namespace std;
 
-constexpr bool benchmark = true;
+// test results against gf2x
 constexpr bool do_gf2x = true;
+// choose between in-place or out-of-place product variants of Mateer-Gao product
 constexpr bool test_in_place_variant = true;
 
-unsigned int extract(uint8_t* tbl, uint64_t sz, uint8_t* extract, uint32_t extract_sz)
-{
-  if(sz <= extract_sz)
-  {
-    for(unsigned int i = 0; i < sz; i++) extract[i] = tbl[i];
-    return (uint32_t) sz;
-  }
-  else
-  {
-    uint32_t a = extract_sz / 3;
-    uint32_t c = extract_sz - 2*a;
-    uint32_t i = 0;
-    uint64_t j = 0;
-    for(; i < a; i++, j++) extract[i] = tbl[j];
-    j = sz/2;
-    for(; i < 2*a; i++, j++) extract[i] = tbl[j];
-    j = sz - c;
-    for(; i < extract_sz; i++, j++) extract[i] = tbl[j];
-    return extract_sz;
-  }
-}
+// benchmark Mateer-Gao product
+// (if false, only one run is done for each tested size; if true, many runs are done
+// when runs are quick, as controlled by variables below)
+constexpr bool benchmark = true;
+// maximum execution time for each test (except if 1 run exceeds this time)
+constexpr double min_time = 2.;
+// maximum number of runs for each test
+constexpr uint64_t max_runs = 100;
 
-#define TEST_IN_PLACE
+// compile-time test that platform is little endian
+// (required by the implementation of 'contract' and 'expand' in mg.cpp)
+// works on gcc, probably also with Visual Studio
+static_assert( __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__);
 
 static bool mateer_gao_product_test(
     unsigned int* log_sz,
@@ -49,57 +38,51 @@ static bool mateer_gao_product_test(
     bool do_gf2x)
 {
   uint64_t i;
-  double t1 = 0, t2 = 0, min_time = 5.;
-  uint64_t max_runs = 1000;
-
+  double t1 = 0, t2 = 0;
   timer tm;
   bool local_error, error = false;
-  unsigned int lsz;
-  uint64_t sz;
   cout << "Testing F2 polynomial product through Mateer-Gao DFT in GF(2**64)" << endl;
   cout << "Minimum execution time per test: " << min_time << " sec." << endl;
   cout << "Maximum number of runs per test: " << max_runs << endl;
-
   mt19937_64 engine;
   uniform_int_distribution<uint64_t> distr;
   auto draw = [&distr, &engine]() {return distr(engine);};
-
-  constexpr uint32_t extract_size = 48;
-  uint8_t e1[extract_size];
-  uint8_t e2[extract_size];
-
-  // computing products of polynomials over f2 with Mateer-Gao DFT and
-  // checking the result with gf2x.
+  constexpr uint32_t extract_size = 6;
+  uint64_t e1[extract_size];
+  uint64_t e2[extract_size];
+  // compute products of polynomials over F2 with Mateer-Gao DFT
+  // optionally check the result with gf2x
   for(unsigned int j = 0; j < num_sz; j++)
   {
-    lsz = log_sz[j];
-    if(lsz > 64) continue;
-    sz = 1uLL << lsz;
+    const uint64_t lsz = log_sz[j];
+    const uint64_t sz = 1uLL << lsz;
+    const bool do_gf2x_local = do_gf2x && lsz <= gf2x_max_logsize;
+    // delay large allocation needed by in-place variant of MG product when comparing to gf2x,
+    // in order for gf2x to have as much available space as possible
+    const bool large_alloc_first = !do_gf2x_local && test_in_place_variant;
+    const bool delayed_large_alloc = do_gf2x_local && test_in_place_variant;
     // buffer size needed, in bytes
-    cout << endl << "Multiplying 2 polynomials of degree (2**" << lsz-1 << ")-1 = " <<
-            sz/2 - 1 << endl;
-
+    cout << endl;
+    cout << "Multiplying 2 polynomials of degree (2**" << lsz-1 << ")-1 = " << sz/2 - 1 << endl;
     uint64_t* p1 = nullptr;
     uint64_t* p2 = nullptr;
     uint64_t* p3 = nullptr;
-
     try
     {
-      p1 = new uint64_t[test_in_place_variant?sz/32:sz/128];
+      p1 = new uint64_t[large_alloc_first?sz/32:sz/128];
       p2 = new uint64_t[sz/128];
-      if(do_gf2x && lsz <= gf2x_max_logsize) p3 = new uint64_t[sz/64];
+      if(do_gf2x_local) p3 = new uint64_t[sz/64];
     }
     catch(bad_alloc&)
     {
       cout << "Not enough memory for current test" << endl;
       continue;
     }
-
     unique_ptr<uint64_t[]> _1(p1);
     unique_ptr<uint64_t[]> _2(p2);
     unique_ptr<uint64_t[]> _3(p3);
-
     // create two random polynomials with sz/2 coefficients
+    engine.seed(lsz);
     for(size_t i = 0; i < sz / 128; i++)
     {
       p1[i] = draw();
@@ -108,14 +91,14 @@ static bool mateer_gao_product_test(
     tm.set_start();
     i = 0;
     uint32_t e_sz = 0;
-    if(do_gf2x && lsz <= gf2x_max_logsize)
+    if(do_gf2x_local)
     {
       cout << " Performing product with gf2x" << endl;
       do
       {
         gf2x_mul((unsigned long *) p3,(unsigned long *) p1, sz/(16*sizeof(unsigned long)),
                  (unsigned long *) p2, sz/(16*sizeof(unsigned long)));
-        if(i == 0) e_sz =  extract((uint8_t*)p3, sz/8, e1, extract_size);
+        if(i == 0) e_sz =  extract<uint64_t>(p3, sz/64, e1, extract_size);
         i++;
         t1 = tm.measure();
       }
@@ -125,6 +108,26 @@ static bool mateer_gao_product_test(
       cout << " gf2x time per iteration: " << t1 << " sec." << endl;
       // reset result
       for(uint64_t i = 0; i < sz/64; i++) p3[i] = 0;
+    }
+
+    if(delayed_large_alloc)
+    {
+      try
+      {
+        uint64_t* tmp = new uint64_t[sz/32];
+        {
+          uint64_t i = 0;
+          for(; i < sz/128; i++) tmp[i] = p1[i];
+          for(; i < sz/32; i++) tmp[i] = 0;
+        }
+        p1 = tmp;
+        _1.reset(tmp);
+      }
+      catch(bad_alloc&)
+      {
+        cout << "Not enough memory for current test" << endl;
+        continue;
+      }
     }
 
     cout << " Performing product with MG DFT" << endl;
@@ -141,7 +144,7 @@ static bool mateer_gao_product_test(
         mg_binary_polynomial_multiply(p1, p2, p3, sz/2 - 1, sz/2 - 1);
       }
       uint64_t* result = test_in_place_variant ? p1 : p3;
-      if(i == 0) extract((uint8_t*)result, sz/8, e2, extract_size);
+      if(i == 0) extract<uint64_t>(result, sz/64, e2, extract_size);
       i++;
       t2 = tm.measure();
 
@@ -152,7 +155,7 @@ static bool mateer_gao_product_test(
     cout << " Mateer-Gao iterations: " << i << endl;
     cout << " Mateer-Gao product time per iteration: " << t2 << " sec." << endl;
 
-    if(do_gf2x && lsz <= gf2x_max_logsize)
+    if(do_gf2x_local)
     {
       cout << " MG / gf2x speed ratio: " << t1 / t2 << endl;
       // compare results
@@ -162,8 +165,7 @@ static bool mateer_gao_product_test(
         if(e1[i] != e2[i])
         {
           local_error = true;
-          cout << dec << i << ": " << hex << (unsigned int) e1[i] << "!=" << (unsigned int) e2[i] << endl;
-          //break;
+          cout << i << ": " << hex << e1[i] << "!=" << e2[i] << dec << endl;
         }
       }
       cout << "Checking result against gf2x: ";
@@ -175,10 +177,8 @@ static bool mateer_gao_product_test(
   return error;
 }
 
-
 int main(int UNUSED(argc), char** UNUSED(argv))
 {
-  //unsigned int log_sz[] = {16, 20, 24, 29};
   unsigned int log_sz[] = {10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37};
   unsigned int gf2x_max_size = 35;
   bool cpu_has_SSE2_and_PCMUL = detect_cpu_features();
@@ -192,4 +192,3 @@ int main(int UNUSED(argc), char** UNUSED(argv))
   if(mateer_gao_error) cout << "Mateer-Gao product test failed" << endl;
   return mateer_gao_error? EXIT_FAILURE : EXIT_SUCCESS;
 }
-

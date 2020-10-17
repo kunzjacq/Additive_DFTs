@@ -1,21 +1,71 @@
 #include "mg.h"
-#include "mg_t.h"
 
-#include <cassert>   // for assert
 #include <memory>    // for unique_ptr
 #include <algorithm> // for min, max
 
 #include <immintrin.h>
 
+// uncomment to use the version of Mateer-Gao DFT where the log block size is a template parameter,
+// (see mg_t.h). Surprisingly, the templatized version is slower than the regular implementation.
+// #define USE_TEMPLATIZED
+
+#ifdef USE_TEMPLATIZED
+#include "mg_t.h"
+#endif
+
 using namespace std;
 
-static void expand_in_place(uint64_t* p, uint64_t d, uint64_t fft_size);
-static void expand(uint64_t* p, uint64_t* res, uint64_t d, uint64_t fft_size);
+/**
+ * both 'contract' and 'expand' can be used with dest = source,
+ * or with disjoint dest and source arrays. Their implementation is little-endian only.
+ **/
 
-// uncomment to use the version of Mateer-Gao DFT where the log block size is a template parameter,
-// instead of the regular one below. Surprisingly, the templatized version is slower than the
-// regular implementation.
-// #define USE_TEMPLATIZED
+/**
+ * @brief expand
+ * Space each 32-bit word of 'source' with a null 32-bit word into 'dest'.
+ * Pad the result with zeros up to 'fft_size' 64-bit words.
+ * 'source' is a binary polyomial of degree 'd', that uses with 'd' / 32 + 1 32-bit words.
+ * @param dest
+ * destination 64-bit array
+ * @param source
+ * source 64-bit array
+ * @param d
+ * degree of the input polynomial
+ * @param fft_size
+ * padding size
+ */
+static void expand(uint64_t* dest, uint64_t* source, uint64_t d, uint64_t fft_size)
+{
+  auto source32 = reinterpret_cast<uint32_t*>(source);
+  uint64_t num_dwords = d / 32 + 1; // d + 1 coefficients, rounded above to a multiple of 32
+  uint64_t j = 0;
+  // little endian
+  for(j = 0; j < num_dwords; j++) dest[num_dwords - 1 - j] = source32[num_dwords - 1 - j];
+  for(; j < fft_size;j++) dest[j] = 0;
+}
+
+/**
+ * @brief contract
+ * Contract a polynomial over GF(2**64), xoring each upper half of each 64-bit with the lower
+ * half of the next 64-bit word.
+ * @param dest
+ * 64-bit destination array
+ * @param source
+ * 64-bit source array
+ * @param d
+ * input polynomial degree
+ */
+static void contract(uint64_t* dest, uint64_t* source, uint64_t d)
+{
+  const size_t num_dwords = d / 32 + 1;
+  uint32_t* dest32   = reinterpret_cast<uint32_t*>(dest);
+  uint32_t* source32 = reinterpret_cast<uint32_t*>(source);
+  dest32[0] = source32[0];
+  for(uint64_t i = 1; i < num_dwords; i++)
+  {
+    dest32[i] = source32[2*i - 1] ^ source32[2*i];
+  }
+}
 
 /**
  * @brief product
@@ -41,6 +91,17 @@ static inline uint64_t product(const uint64_t&a, const uint64_t&b)
   return xb[0];
 }
 
+/**
+ * @brief product_batch
+ * performs 2**logsize products in GF(2**64). a[i] <- a[i] × b[i].
+ * assumes logsize >=2 (since products are performed in groups of 4)
+ * @param a_ptr
+ * source and destination array
+ * @param b_ptr
+ * source array
+ * @param logsize
+ * log2 of number of products to perform
+ */
 static void product_batch(uint64_t* a_ptr, uint64_t* b_ptr, unsigned int logsize)
 {
   const uint64_t sz = 1uLL << logsize;
@@ -293,8 +354,9 @@ void mg_smalldegree_with_buf(
 
     for(uint64_t i = 0; i < 1uLL << (logsize - logsizeprime); i++)
     {
-      expand(p, buf, szp * 32 - 1, szp);
+      expand(buf, p, szp * 32 - 1, szp);
       mg_core<s, 0>(buf, offsets_mult, logsizeprime, true);
+      // logsizeprime >= 2 (see above)
       product_batch(main_buf + (i << logsizeprime), buf, logsizeprime);
       const long unsigned int h = _mm_popcnt_u64(i^(i+1));
       for(unsigned int j = 0; j < min<unsigned long>(1 << s, h + logsizeprime); j++)
@@ -366,82 +428,29 @@ void mg_reverse_core(
   }
 }
 
-static void expand_in_place(uint64_t* p, uint64_t d, uint64_t fft_size)
-{
-  auto source = reinterpret_cast<uint32_t*>(p);
-  constexpr int num_bits_half = 32;
-  uint64_t dw = d / num_bits_half + 1;
-  uint64_t j = 0;
-  // little endian
-  for(j = 0; j < dw; j++) p[dw - 1 - j] = source[dw - 1 - j];
-  for(; j < fft_size;j++) p[j] = 0;
-}
-
-static void contract_in_place(uint64_t* buf, uint64_t d)
-{
-  const size_t bound = d / 32 + 1;
-  uint32_t* q = reinterpret_cast<uint32_t*>(buf);
-  for(uint64_t i = 1; i < bound; i++)
-  {
-    q[i] = q[2*i - 1] ^ q[2*i];
-  }
-}
-
-static void expand(uint64_t* p, uint64_t* res, uint64_t d, uint64_t fft_size)
-{
-  auto source = reinterpret_cast<uint32_t*>(p);
-  constexpr int num_bits_half = 32;
-  uint64_t dw = d / num_bits_half + 1;
-  uint64_t j = 0;
-  // little endian
-  for(j = 0; j < dw; j++) res[j] = source[j];
-  for(; j < fft_size;j++) res[j] = 0;
-}
-
-static void contract(uint64_t* buf, uint8_t* p, uint64_t d)
-{
-  constexpr unsigned int bits_per_half_uint64_t  = 32;
-  const size_t bound = d / bits_per_half_uint64_t + 1;
-  uint64_t* dest_even = reinterpret_cast<uint64_t*>(p);
-  uint64_t* dest_odd  = reinterpret_cast<uint64_t*>(p + (bits_per_half_uint64_t >> 3));
-  for(uint64_t i = 0; i < bound >> 1; i++) dest_even[i] = 0;
-  for(uint64_t i = 0; i < bound; i++)
-  {
-    if((i & 1) == 0) dest_even[i >> 1] ^= buf[i];
-    else             dest_odd [i >> 1] ^= buf[i];
-  }
-}
-
 void mg_binary_polynomial_multiply(uint64_t* p1, uint64_t* p2, uint64_t* result, uint64_t d1, uint64_t d2)
 {
   constexpr unsigned int s = 6;
   uint64_t offsets_mult[1 << s];
   for(int i = 0; i < (1 << s); i++) offsets_mult[i] = 0;
   unsigned int logsize_result = 1;
+  // size of result, in 32-bit words.
   while((1uLL << logsize_result) * 32 < (d1 + d2 + 1)) logsize_result++;
-  uint64_t* b1 = new uint64_t[1uLL<<logsize_result];
-  unique_ptr<uint64_t[]> _1(b1);
-  uint64_t* b2 = new uint64_t[1uLL<<logsize_result];
-  unique_ptr<uint64_t[]> _2(b2);
   const uint64_t sz = 1uLL << logsize_result;
-#if 0
-  expand(p1, b1, d1, sz);
-  expand(p2, b2, d2, sz);
-#else
-  for(uint64_t i = 0; i < (d1 + 63) / 64; i++) b1[i] = p1[i];
-  expand_in_place(b1, d1, sz);
-  for(uint64_t i = 0; i < (d2 + 63) / 64; i++) b2[i] = p2[i];
-  expand_in_place(b2, d2, sz);
-#endif
-
+  // a buffer twice the size of the result
+  uint64_t* b1 = new uint64_t[sz];
+  unique_ptr<uint64_t[]> _1(b1);
+  // a second one
+  uint64_t* b2 = new uint64_t[sz];
+  unique_ptr<uint64_t[]> _2(b2);
+  expand(b1, p1, d1, sz);
+  expand(b2, p2, d2, sz);
   // size of p1, in 32-bit words.
   unsigned int logsize_1 = 0;
   while((1uLL << logsize_1) * 32 < (d1 + 1)) logsize_1++;
-
   // size of p2, in 32-bit words.
   unsigned int logsize_2 = 0;
   while((1uLL << logsize_2) * 32 < (d2 + 1)) logsize_2++;
-
   mg_smalldegree<s>(b1, logsize_1, logsize_result);
   mg_smalldegree<s>(b2, logsize_2, logsize_result);
   if(logsize_result < 2)
@@ -458,24 +467,9 @@ void mg_binary_polynomial_multiply(uint64_t* p1, uint64_t* p2, uint64_t* result,
   mg_reverse_core<s,0>(b1, offsets_mult, logsize_result);
 #endif
 
-#if 0
-  contract(b1, result, d1 + d2);
-#else
-  contract_in_place(b1, d1 + d2);
-  for(uint64_t i = 0; i < (d1 + d2 + 63) / 64; i++) result[i] = b1[i];
-#endif
+  contract(result, b1, d1 + d2);
 }
 
-
-/**
- * multiply p1 by p2.
- * Assumes p1 can hold twice the size of the result polynomial, rounded to the next power of 2.
- * Assumes p2 can hold the size of the second polynomial, rounded to the next power of 2.
- * result is returned in p1, p2 is modified during computations.
- * the function allocatesi internally a buffer twice the size of the buffer p2.
- * Since the size of p1 only depends on the result size, p2 should be set to the smallest degree
- * polynomial to be multiplied.
- */
 void mg_binary_polynomial_multiply_in_place (uint64_t* p1, uint64_t* p2, uint64_t d1, uint64_t d2)
 {
   constexpr unsigned int s = 6;
@@ -494,11 +488,11 @@ void mg_binary_polynomial_multiply_in_place (uint64_t* p1, uint64_t* p2, uint64_
   while((1uLL << logsize_2) * 32 < (d2 + 1)) logsize_2++;
 
   const uint64_t sz_result = 1uLL << logsize_result;
-  expand_in_place(p1, d1, sz_result);
+  expand(p1, p1, d1, sz_result);
   mg_smalldegree<s>((uint64_t*) p1, logsize_1, logsize_result);
 
   mg_smalldegree_with_buf<s>(p2, logsize_2, logsize_result, p1);
 
   mg_reverse_core<s,0>(p1, offsets_mult, logsize_result);
-  contract_in_place(p1, d1 + d2);
+  contract(p1, p1, d1 + d2);
 }
