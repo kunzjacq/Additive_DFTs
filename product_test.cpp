@@ -37,7 +37,7 @@ static bool mateer_gao_product_test(
     bool benchmark,
     bool do_gf2x)
 {
-  uint64_t i;
+  uint64_t iter_count;
   double t1 = 0, t2 = 0;
   timer tm;
   bool local_error, error = false;
@@ -83,13 +83,13 @@ static bool mateer_gao_product_test(
     unique_ptr<uint64_t[]> _3(p3);
     // create two random polynomials with sz/2 coefficients
     engine.seed(lsz);
-    for(size_t i = 0; i < sz / 128; i++)
+    for(uint64_t i = 0; i < sz / 128; i++)
     {
       p1[i] = draw();
       p2[i] = draw();
     }
     tm.set_start();
-    i = 0;
+    iter_count = 0;
     uint32_t e_sz = 0;
     if(do_gf2x_local)
     {
@@ -98,13 +98,13 @@ static bool mateer_gao_product_test(
       {
         gf2x_mul((unsigned long *) p3,(unsigned long *) p1, sz/(16*sizeof(unsigned long)),
                  (unsigned long *) p2, sz/(16*sizeof(unsigned long)));
-        if(i == 0) e_sz =  extract<uint64_t>(p3, sz/64, e1, extract_size);
-        i++;
+        if(iter_count == 0) e_sz =  extract<uint64_t>(p3, sz/64, e1, extract_size);
+        iter_count++;
         t1 = tm.measure();
       }
-      while(benchmark && (t1 <= min_time) && (i < max_runs));
-      t1 /= i;
-      cout << " gf2x iterations: " << i << endl;
+      while(benchmark && (t1 <= min_time) && (iter_count < max_runs));
+      t1 /= iter_count;
+      cout << " gf2x iterations: " << iter_count << endl;
       cout << " gf2x time per iteration: " << t1 << " sec." << endl;
       // reset result
       for(uint64_t i = 0; i < sz/64; i++) p3[i] = 0;
@@ -132,7 +132,7 @@ static bool mateer_gao_product_test(
 
     cout << " Performing product with MG DFT" << endl;
     tm.set_start();
-    i = 0;
+    iter_count = 0;
     do
     {
       if constexpr(test_in_place_variant)
@@ -144,15 +144,15 @@ static bool mateer_gao_product_test(
         mg_binary_polynomial_multiply(p1, p2, p3, sz/2 - 1, sz/2 - 1);
       }
       uint64_t* result = test_in_place_variant ? p1 : p3;
-      if(i == 0) extract<uint64_t>(result, sz/64, e2, extract_size);
-      i++;
+      if(iter_count == 0) extract<uint64_t>(result, sz/64, e2, extract_size);
+      iter_count++;
       t2 = tm.measure();
 
     }
-    while(benchmark && (t2 <= min_time) && (i < max_runs));
-    t2 /= i;
+    while(benchmark && (t2 <= min_time) && (iter_count < max_runs));
+    t2 /= iter_count;
 
-    cout << " Mateer-Gao iterations: " << i << endl;
+    cout << " Mateer-Gao iterations: " << iter_count << endl;
     cout << " Mateer-Gao product time per iteration: " << t2 << " sec." << endl;
 
     if(do_gf2x_local)
