@@ -165,9 +165,10 @@ unsigned int popcnt_mod_2_cppinteger(const word &w, unsigned int n)
 }
 
 /**
- * solves a binary system with Gauss pivoting
+ * solves a binary system AX = B with Gauss pivoting
  * returns 0 on success, 1 on absence of solution, 2 if there is an internal error
  * (which should never happen).
+ * !! Both A and B are affected by this function !!
  */
 template <class word>
 int solve_system(word* A, word &B, word& res)
@@ -235,9 +236,10 @@ int solve_system(word* A, word &B, word& res)
 }
 
 /**
- * invert a matrix with Gauss pivoting
+ * invert matrix A with Gauss pivoting
  * returns 0 on success, 1 on absence of solution, 2 if there is an internal error
  * (which of course should never happen).
+ * A is affected by this function: it is the identity on output.
  */
 template <class word>
 int invert_matrix(word* A, word* inv, unsigned int nprime)
@@ -541,8 +543,10 @@ int test_solve(bool verbose)
         if(rand() & 1) set_bit(A[i], j , 1);
       }
     }
-    memcpy(AA,A, n * sizeof(word));
+    memcpy(AA, A, n * sizeof(word));
+    word B_save = B;
     int res = solve_system(A, B, C);
+    B = B_save;
     if(res == 0)
     {
       cout << "a solution was found" << endl;
