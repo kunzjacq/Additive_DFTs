@@ -53,6 +53,7 @@ static void expand(uint64_t* dest, uint64_t* source, uint64_t d, uint64_t fft_si
   uint64_t num_dwords = d / 32 + 1; // d + 1 coefficients, rounded above to a multiple of 32
   uint64_t j = 0;
   // little endian
+  // backward loop to handle the case where dest = source
   for(j = 0; j < num_dwords; j++) dest[num_dwords - 1 - j] = source32[num_dwords - 1 - j];
   for(; j < fft_size;j++) dest[j] = 0;
 }
@@ -230,7 +231,7 @@ inline void mg_core(
       {
         // at each iteration, offsets_local[j] = beta_to_mult(offset + (i << (t-j))), j < t
         mg_core<s - 1, logstride>(poly, offsets_local, t, false);
-        const long int h = _mm_popcnt_u64(i^(i+1)); // i^(i+1) is a power of 2 - 1
+        const int h = (int) _mm_popcnt_u64(i^(i+1)); // i^(i+1) is a power of 2 - 1
         for(unsigned int j = 0; j < t; j++)
         {
           int tp = t - j;
@@ -292,7 +293,7 @@ void mg_smalldegree(
     {
       uint64_t* q = p + (i << logsizeprime);
       mg_core<s, 0>(q, offsets_mult, logsizeprime, true);
-      const long unsigned int h = _mm_popcnt_u64(i^(i+1));
+      const int h = (int) _mm_popcnt_u64(i^(i+1));
       // goal: xor to offsets_mult[j] to the multiplicative representation w of the value
       // v = (i^(i+1) << logsizeprime) >> j in beta representation,
       // 0 <= j < 2**s.
@@ -365,7 +366,7 @@ void mg_smalldegree_with_buf(
       mg_core<s, 0>(buf, offsets_mult, logsizeprime, true);
       // logsizeprime >= 2 (see above)
       product_batch(main_buf + (i << logsizeprime), buf, logsizeprime);
-      const long unsigned int h = _mm_popcnt_u64(i^(i+1));
+      const int h = (int) _mm_popcnt_u64(i^(i+1));
       for(unsigned int j = 0; j < min<unsigned long>(1 << s, h + logsizeprime); j++)
       {
         offsets_mult[j] ^= beta_over_mult_cumulative[h + logsizeprime - j];
@@ -419,7 +420,7 @@ void mg_reverse_core(
       {
         // at each iteration, offsets_local[j] = beta_to_mult(offset + (i << (t-j))), j < t
         mg_reverse_core<s - 1, logstride>(poly_loc, offsets_local, t);
-        long int h = _mm_popcnt_u64(i^(i+1));
+        const int h = (int) _mm_popcnt_u64(i^(i+1));
         for(unsigned int j = 0; j < t; j++)
         {
           int tp = t - j;
@@ -468,12 +469,7 @@ void mg_binary_polynomial_multiply(uint64_t* p1, uint64_t* p2, uint64_t* result,
   {
     product_batch(b1, b2, logsize_result);
   }
-#ifdef USE_TEMPLATIZED
-  mgt_reverse_core<s,0>(b1, offsets_mult, logsize);
-#else
   mg_reverse_core<s,0>(b1, offsets_mult, logsize_result);
-#endif
-
   contract(result, b1, d1 + d2);
 }
 

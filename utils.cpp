@@ -20,7 +20,7 @@ static void cpuid(uint32_t out[4], int32_t eax, int32_t ecx){
 
 /**
   Detects whether CPU has SSE2 and PCLMULQDQ, which are required for the fast GF2**64
-  implementation used if DFT algorithms.
+  implementation used by DFT algorithms.
  */
 bool detect_cpu_features()
 {
