@@ -7,6 +7,8 @@
 
 using namespace std;
 
+#define GRAY_CODE
+
 /** beta_over_mult_cumulative[i] = sum_j = 0 ... i - 1 beta_i
  * in multplicative representation, i.e. in GF(2**64) as described in
  * function 'product'. beta_i refers to the beta basis in Mateer-Gao algorithm.
@@ -30,6 +32,27 @@ static constexpr uint64_t beta_over_mult_cumulative[] = {
   0xb3b50cfd392bc4b1,0xf54ebfb28d2f23cc,0xebeea0f9242d3352,0xe667293b4ee307b4,
   0x6d1861bfc6fbe3e8
 };
+
+#ifdef GRAY_CODE
+static constexpr uint64_t beta_over_mult[] = {
+  0x1               , 0x19c9369f278adc02, 0xa181e7d66f5ff795, 0x447175c8e9f2810b,
+  0x013b052fbd1cfb5d, 0xb7ea5a9705b771c0, 0x467698598926dc01, 0x1a9c05699898468f,
+  0x109a9dd350b468b8, 0x184b3b707446faf8, 0xbd21077a71c52b4a, 0xfd4fb47b8220beec,
+  0xe4b954b528d60802, 0xf3dc28c547403da8, 0xedb0cbd331e507da, 0x528a186f6c748cc3,
+  0x2a4b189ca2c5b59,  0x029a7d210e532656, 0xada3c0442e57c3ed, 0xfc81451edeb89ab1,
+  0xe0c6709608af557d, 0xf3a6d818653f0cad, 0x462ae6a22ce5e08f, 0x1e677e25acb98834,
+  0x0d1c664464247894, 0x0ba8cdc203194db8, 0xa72be7361a8a2e7b, 0xe8f9a3bef7bf9a23,
+  0xfdc592067c87cefb, 0x5619de8a10dc091c, 0xb00c8dfcd7e00c33, 0xef0bce0ca0b80a16,
+  0xfbae750576464fad, 0xe39ee95e2988b6f0, 0x5fcbcfaf4fc958bc, 0xbb39bb36fb3a3a6e,
+  0x49f4e995a5e6a19a, 0xb96e26d8986dcc00, 0xfd102dc9a745eace, 0xfc215193194874b9,
+  0x4f3722442534c506, 0x14c452a09a1f6902, 0x056a9d1a427420eb, 0x1c4a2ee33d3f6ccc,
+  0x0beb2000556e2d9d, 0xa623096706b4f000, 0xe9eb43c1f6c4800e, 0x4fea486d51515e3b,
+  0xa2848cdf92322663, 0xf53bfc6ad613accb, 0x5d14a7c82a96db10, 0x0bb55122c488b32d,
+  0x150e463f2440d67e, 0xb23320484d5035f4, 0x5bc3417ba85bf519, 0x10c52081c14d3417,
+  0xb60c77a147cd8953, 0x5bf866708a444e09, 0x1449d1fdf01d5b76, 0xb230b2ee57674530,
+  0x46fbb34fb404e77d, 0x1ea01f4ba902109e, 0x0d8989c26ace34e6, 0x8b7f48848818e45c
+};
+#endif
 
 /**
  * @brief expand
@@ -104,7 +127,7 @@ static inline uint64_t product(const uint64_t&a, const uint64_t&b)
   xb = _mm_xor_si128(xb, xc);
   xc = _mm_clmulepi64_si128(xa, xc, 0x11);
   xb = _mm_xor_si128(xb, xc);
-  return xb[0];
+  return _mm_extract_epi64(xb, 0);
 }
 
 /**
@@ -118,25 +141,59 @@ static inline uint64_t product(const uint64_t&a, const uint64_t&b)
  * @param logsize
  * log2 of number of products to perform
  */
-static void product_batch(uint64_t* a_ptr, uint64_t* b_ptr, unsigned int logsize)
+static void product_batch(uint64_t* restr a_ptru, uint64_t* restr b_ptru, unsigned int logsize)
 {
-  const uint64_t sz = 1uLL << logsize;
+#define ALT_MEM_ACCESS
+#ifdef ALT_MEM_ACCESS
+  __m128i* restr a_ptr128 = (__m128i*) std::assume_aligned<16>(a_ptru);
+  __m128i* restr b_ptr128 = (__m128i*) std::assume_aligned<16>(b_ptru);
+#else
+  uint64_t* restr a_ptr = (uint64_t*) std::assume_aligned<16>(a_ptru);
+  uint64_t* restr b_ptr = (uint64_t*) std::assume_aligned<16>(b_ptru);
+#endif
+
   assert(logsize >= 2);
+  const uint64_t sz = 1uLL << (logsize - 2);
 
   constexpr uint64_t minpoly = 0x1b;
   __m128i xp, xa1, xa2, xa3, xa4, xb1, xb2, xb3, xb4, xc1, xc2, xc3, xc4;
-  xp[0] = minpoly;
-  for(uint64_t i = 0; i < sz; i += 4)
-  {
-    xa1 = _mm_set1_epi64x(a_ptr[i]);
-    xa2 = _mm_set1_epi64x(a_ptr[i + 1]);
-    xa3 = _mm_set1_epi64x(a_ptr[i + 2]);
-    xa4 = _mm_set1_epi64x(a_ptr[i + 3]);
 
-    xb1 = _mm_set1_epi64x(b_ptr[i]);
-    xb2 = _mm_set1_epi64x(b_ptr[i + 1]);
-    xb3 = _mm_set1_epi64x(b_ptr[i + 2]);
-    xb4 = _mm_set1_epi64x(b_ptr[i + 3]);
+  xp = _mm_set1_epi64x(minpoly);
+#ifndef ALT_MEM_ACCESS
+  for(uint64_t i = 0; i < sz; i++)
+  {
+    xa1 = _mm_set1_epi64x(a_ptr[0]);
+    xa2 = _mm_set1_epi64x(a_ptr[1]);
+    xa3 = _mm_set1_epi64x(a_ptr[2]);
+    xa4 = _mm_set1_epi64x(a_ptr[3]);
+    xb1 = _mm_set1_epi64x(b_ptr[0]);
+    xb2 = _mm_set1_epi64x(b_ptr[1]);
+    xb3 = _mm_set1_epi64x(b_ptr[2]);
+    xb4 = _mm_set1_epi64x(b_ptr[3]);
+#else
+  xb2 = _mm_set1_epi64x(0); // to silence warnings below (search for 'unused')
+  for(uint64_t i = 0; i < sz; i ++)
+  {
+    xa1 = _mm_load_si128(a_ptr128);
+    xa3 = _mm_load_si128(a_ptr128 + 1);
+#if 0
+    xa2 = _mm_shuffle_epi32(xa1, 0x4e);
+    xa4 = _mm_shuffle_epi32(xa3, 0x4e);
+#else
+    xa2 = _mm_unpackhi_epi64(xa1, xb2); //xb2 unused here
+    xa4 = _mm_unpackhi_epi64(xa3, xb2); //xb2 unused here
+#endif
+    xb1 = _mm_load_si128(b_ptr128);
+    xb3 = _mm_load_si128(b_ptr128 + 1);
+#if 0
+    xb2 = _mm_shuffle_epi32(xb1, 0x4e);
+    xb4 = _mm_shuffle_epi32(xb3, 0x4e);
+#else
+    xb2 = _mm_unpackhi_epi64(xb1, xb2); //xb2 unused here
+    xb4 = _mm_unpackhi_epi64(xb3, xb2); //xb2 unused here
+#endif
+#endif
+
     xb1 = _mm_clmulepi64_si128(xa1, xb1, 0x00);
     xb2 = _mm_clmulepi64_si128(xa2, xb2, 0x00);
     xb3 = _mm_clmulepi64_si128(xa3, xb3, 0x00);
@@ -153,14 +210,29 @@ static void product_batch(uint64_t* a_ptr, uint64_t* b_ptr, unsigned int logsize
     xc2 = _mm_clmulepi64_si128(xp, xc2, 0x10);
     xc3 = _mm_clmulepi64_si128(xp, xc3, 0x10);
     xc4 = _mm_clmulepi64_si128(xp, xc4, 0x10);
+#ifndef ALT_MEM_ACCESS
     xb1 = _mm_xor_si128(xb1, xc1);
     xb2 = _mm_xor_si128(xb2, xc2);
     xb3 = _mm_xor_si128(xb3, xc3);
     xb4 = _mm_xor_si128(xb4, xc4);
-    a_ptr[i]     = xb1[0];
-    a_ptr[i + 1] = xb2[0];
-    a_ptr[i + 2] = xb3[0];
-    a_ptr[i + 3] = xb4[0];
+    a_ptr[0] = _mm_extract_epi64(xb1, 0);
+    a_ptr[1] = _mm_extract_epi64(xb2, 0);
+    a_ptr[2] = _mm_extract_epi64(xb3, 0);
+    a_ptr[3] = _mm_extract_epi64(xb4, 0);
+    a_ptr += 4;
+    b_ptr += 4;
+#else
+    xb1 =_mm_unpacklo_epi64(xb1, xb2); // group lower halves of xb1 and xb2 into xb1
+    xc1 =_mm_unpacklo_epi64(xc1, xc2);
+    xb3 =_mm_unpacklo_epi64(xb3, xb4);
+    xc3 =_mm_unpacklo_epi64(xc3, xc4);
+    xb1 = _mm_xor_si128(xb1, xc1);
+    xb3 = _mm_xor_si128(xb3, xc3);
+    _mm_store_si128(a_ptr128,     xb1); //16-byte aligned store
+    _mm_store_si128(a_ptr128 + 1, xb3);
+    a_ptr128 += 2;
+    b_ptr128 += 2;
+#endif
   }
 }
 
@@ -227,6 +299,8 @@ inline void mg_core(
       for(unsigned int j = 0; j < t; j++) offsets_local[j] = offsets_mult[j];
       // 2*t >= logsize > t, therefore tau < 2**t
       const uint64_t tau   = 1uLL <<  (logsize - t);
+#ifndef GRAY_CODE
+      const uint64_t row_size = 1uLL << (t + logstride);
       for(uint64_t i = 0; i < tau; i++)
       {
         // at each iteration, offsets_local[j] = beta_to_mult(offset + (i << (t-j))), j < t
@@ -237,8 +311,16 @@ inline void mg_core(
           int tp = t - j;
           offsets_local[j] ^= beta_over_mult_cumulative[h + tp] ^ beta_over_mult_cumulative[tp];
         }
-        poly += 1uLL << (t + logstride);
+        poly += row_size;
       }
+#else
+      for(uint64_t k = 0; k < tau; k++)
+      {
+        mg_core<s - 1, logstride>(poly + ((k ^ (k >> 1)) << (t + logstride)), offsets_local, t, false);
+        const int h = (int) _tzcnt_u64(~k) + t; // 1 << (h-t) is equal to k ^ (k >> 1) ^ (k+1) ^ ((k+1) >> 1)
+        for(unsigned int j = 0; j < t; j++) offsets_local[j] ^= beta_over_mult[h - j];
+      }
+#endif
     }
   }
 }
@@ -410,12 +492,13 @@ void mg_reverse_core(
     }
     else
     {
-      const uint64_t row_size = 1uLL << (t + logstride);
-      uint64_t* poly_loc = poly;
       uint64_t offsets_local[t];
       for(unsigned int j = 0; j < t; j++) offsets_local[j] = offsets_mult[j];
       // 2*t >= logsize > t, therefore tau < 2**t
       const uint64_t tau   = 1uLL <<  (logsize - t);
+#ifndef GRAY_CODE
+      const uint64_t row_size = 1uLL << (t + logstride);
+      uint64_t* poly_loc = poly;
       for(uint64_t i = 0; i < tau; i++)
       {
         // at each iteration, offsets_local[j] = beta_to_mult(offset + (i << (t-j))), j < t
@@ -428,6 +511,14 @@ void mg_reverse_core(
         }
         poly_loc += row_size;
       }
+#else
+      for(uint64_t k = 0; k < tau; k++)
+      {
+        mg_reverse_core<s - 1, logstride>(poly + ((k ^ (k >> 1)) << (t + logstride)), offsets_local, t);
+        const int h = (int) _tzcnt_u64(~k) + t; // 1 << (h-t) is equal to k ^ (k >> 1) ^ (k+1) ^ ((k+1) >> 1)
+        for(unsigned int j = 0; j < t; j++) offsets_local[j] ^= beta_over_mult[h - j];
+      }
+#endif
       // reverse fft on columns
       //offset' = offset >> t;
       mg_reverse_core<s - 1, logstride + t>(poly, offsets_mult + t, logsize - t);

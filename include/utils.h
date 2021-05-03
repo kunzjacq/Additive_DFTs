@@ -4,8 +4,6 @@
 #include <iostream>
 #include <iomanip>
 
-using namespace std;
-
 #if defined(__cplusplus)
 #define UNUSED(x)
 #elif defined(__GNUC__)
@@ -56,7 +54,7 @@ template <class word>
 void print_value(const word& p_data)
 {
   constexpr size_t num_chars = 2* sizeof(word);
-  cout << hex << setw(num_chars) << p_data;
+  std::cout << std::hex << std::setw(num_chars) << p_data;
 }
 
 template <>
@@ -65,32 +63,32 @@ void print_value(const uint8_t& p_data);
 template <class word>
 void print_series(const word* p_data, size_t p_group_size, size_t p_num_display)
 {
-  cout << hex << setfill('0');
+  std::cout << std::hex << std::setfill('0');
   if(p_group_size > 2 * p_num_display)
   {
     for(size_t i = 0; i < p_num_display; i++)
     {
       print_value(p_data[i]);
-      cout << " ";
+      std::cout << " ";
     }
-    cout << "... ";
+    std::cout << "... ";
     for(size_t i = 0; i < p_num_display; i++)
     {
       print_value(p_data[p_group_size - p_num_display + i]);
-      cout << " ";
+      std::cout << " ";
     }
-    cout << endl;
+    std::cout << std::endl;
   }
   else
   {
     for(size_t i = 0; i < p_group_size; i++)
     {
       print_value(p_data[i]);
-      cout << " ";
+      std::cout << " ";
     }
-    cout << endl;
+    std::cout << std::endl;
   }
-  cout << dec << setfill(' ');
+  std::cout << std::dec << std::setfill(' ');
 }
 
 template<class word>
@@ -107,14 +105,14 @@ int compare_results(word* p_dataA, word* p_dataB, size_t p_group_size, size_t p_
 
   if(always_display || (num_errors > 0))
   {
-    cout << endl << "** " << num_errors << " errors **" << endl;
+    std::cout << std::endl << "** " << num_errors << " errors **" << std::endl;
     print_series(p_dataA, p_group_size, p_num_display);
     print_series(p_dataB, p_group_size, p_num_display);
-    cout << endl;
+    std::cout << std::endl;
   }
   else
   {
-    cout << "no error" << endl;
+    std::cout << "no error" << std::endl;
   }
   return num_errors > 0 ? 1 : 0;
 }

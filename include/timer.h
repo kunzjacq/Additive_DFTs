@@ -5,8 +5,8 @@
 
 class timer
 {
-  typeof std::chrono::high_resolution_clock::now() begin;
-  typeof std::chrono::high_resolution_clock::now() end;
+  std::chrono::time_point<std::chrono::high_resolution_clock> begin;
+   std::chrono::time_point<std::chrono::high_resolution_clock> end;
 public:
   void set_start()
   {

@@ -3,8 +3,24 @@
 #include <cstdint> // for uint64_t and other types
 #include <cstddef>
 #include <cassert> // for assert
+#include <memory> // for assume_aligned
 
 #include <immintrin.h> // for x86_64 intrinsics
+
+#ifdef __GNUC__
+// unused, _mm_set_epi64x is preferred
+#define m128_extract(v,idx) (v)[idx]
+#define restr __restrict__
+#else
+#ifdef _MSC_VER
+// unused, _mm_set_epi64x is preferred
+#define m128_extract(v,idx) (v).m128i_i64[idx]
+#define restr __restrict
+#else
+#error "unsupported compiler"
+#endif
+#endif
+
 
 /**
  * @brief binary_polynomial_multiply
@@ -77,8 +93,10 @@ void mg_binary_polynomial_multiply_in_place (uint64_t *p1, uint64_t *p2, uint64_
  * a pointer to the array containing the interleaved polynomials.
  */
 template<bool reverse, int logstride>
-static inline void eval_degree1(const uint64_t val, uint64_t* p)
+static inline void eval_degree1(const uint64_t val,  uint64_t* restr pu)
 {
+  uint64_t* restr p = (uint64_t*) std::assume_aligned<16>(pu);
+
   constexpr uint64_t minpoly = 0x1b; // x**64 = x**4 + x**3 + x + 1
   // x**64 + x**4 + x**3 + x + 1 is primitive over GF(2)
   // it is the minimal polynomial of the multiplicative generator
@@ -94,7 +112,7 @@ static inline void eval_degree1(const uint64_t val, uint64_t* p)
     xb = _mm_xor_si128(xb, xc);
     xc = _mm_clmulepi64_si128(xa, xc, 0x11);
     xb = _mm_xor_si128(xb, xc);
-    p[0] ^= xb[0];
+    p[0] ^= _mm_extract_epi64(xb, 0);
     if constexpr(!reverse) p[1] ^= p[0];
 
   }
@@ -106,10 +124,20 @@ static inline void eval_degree1(const uint64_t val, uint64_t* p)
       p[2] ^= p[0];
       p[3] ^= p[1];
     }
+#if 0
     xb1 = _mm_set1_epi64x(p[2]);
     xb2 = _mm_set1_epi64x(p[3]);
     xb1 = _mm_clmulepi64_si128(xa, xb1, 0x00);
     xb2 = _mm_clmulepi64_si128(xa, xb2, 0x00);
+#else
+#if 0
+    xb1 = _mm_load_si128((__m128i*)(p) + 1); // _mm_load_si128 much slower than _mm_set_epi64x here
+#else
+    xb1 = _mm_set_epi64x(p[3], p[2]);
+#endif
+    xb2 = _mm_clmulepi64_si128(xa, xb1, 0x10);
+    xb1 = _mm_clmulepi64_si128(xa, xb1, 0x00);
+#endif
     xc1 = _mm_clmulepi64_si128(xa, xb1, 0x11);
     xc2 = _mm_clmulepi64_si128(xa, xb2, 0x11);
     xb1 = _mm_xor_si128(xb1, xc1);
@@ -118,8 +146,19 @@ static inline void eval_degree1(const uint64_t val, uint64_t* p)
     xc2 = _mm_clmulepi64_si128(xa, xc2, 0x11);
     xb1 = _mm_xor_si128(xb1, xc1);
     xb2 = _mm_xor_si128(xb2, xc2);
-    p[0] ^= xb1[0];
-    p[1] ^= xb2[0];
+#if 0
+    p[0] ^= _mm_extract_epi64(xb1, 0);
+    p[1] ^= _mm_extract_epi64(xb2, 0);
+#else
+    xb1 =_mm_unpacklo_epi64(xb1, xb2);
+#if 0
+    xb2 = _mm_load_si128((__m128i*)p);
+#else
+    xb2 = _mm_set_epi64x(p[1], p[0]);
+#endif
+    xb1 = _mm_xor_si128(xb1, xb2);
+    _mm_store_si128((__m128i*)p,   xb1); //16-byte aligned store
+#endif
     if constexpr(!reverse)
     {
       p[2] ^= p[0];
@@ -131,23 +170,38 @@ static inline void eval_degree1(const uint64_t val, uint64_t* p)
     const uint64_t stride = 1uLL << logstride;
     for(uint64_t i = 0; i < stride; i += 4)
     {
-
       __m128i xb1, xb2, xb3, xb4, xc1, xc2, xc3, xc4;
+      uint64_t* restr q = std::assume_aligned<16>(p + stride);
       if constexpr(reverse)
       {
-        p[i + stride]     ^= p[i];
-        p[i + stride + 1] ^= p[i + 1];
-        p[i + stride + 2] ^= p[i + 2];
-        p[i + stride + 3] ^= p[i + 3];
+        q[0] ^= p[0];
+        q[1] ^= p[1];
+        q[2] ^= p[2];
+        q[3] ^= p[3];
       }
-      xb1 = _mm_set1_epi64x(p[i + stride]);
-      xb2 = _mm_set1_epi64x(p[i + stride + 1]);
-      xb3 = _mm_set1_epi64x(p[i + stride + 2]);
-      xb4 = _mm_set1_epi64x(p[i + stride + 3]);
+#if 0
+      xb1 = _mm_set1_epi64x(p[stride]);
+      xb2 = _mm_set1_epi64x(p[stride + 1]);
+      xb3 = _mm_set1_epi64x(p[stride + 2]);
+      xb4 = _mm_set1_epi64x(p[stride + 3]);
       xb1 = _mm_clmulepi64_si128(xa, xb1, 0x00);
       xb2 = _mm_clmulepi64_si128(xa, xb2, 0x00);
       xb3 = _mm_clmulepi64_si128(xa, xb3, 0x00);
       xb4 = _mm_clmulepi64_si128(xa, xb4, 0x00);
+#else
+#if 0
+      xb1 = _mm_set_epi64x(q[1], q[0]); // here _mm_set_epi64x is faster than _mm_load_si128
+      xb3 = _mm_set_epi64x(q[3], q[2]); //(see below)
+#else
+      xb1 = _mm_load_si128((__m128i*)(q)); // here _mm_set_epi64x is faster than _mm_load_si128
+      xb3 = _mm_load_si128((__m128i*)(q)+1); //(see below)
+#endif
+      xb2 = _mm_clmulepi64_si128(xa, xb1, 0x10);
+      xb4 = _mm_clmulepi64_si128(xa, xb3, 0x10);
+      xb1 = _mm_clmulepi64_si128(xa, xb1, 0x00);
+      xb3 = _mm_clmulepi64_si128(xa, xb3, 0x00);
+#endif
+
       xc1 = _mm_clmulepi64_si128(xa, xb1, 0x11);
       xc2 = _mm_clmulepi64_si128(xa, xb2, 0x11);
       xc3 = _mm_clmulepi64_si128(xa, xb3, 0x11);
@@ -164,17 +218,34 @@ static inline void eval_degree1(const uint64_t val, uint64_t* p)
       xb2 = _mm_xor_si128(xb2, xc2);
       xb3 = _mm_xor_si128(xb3, xc3);
       xb4 = _mm_xor_si128(xb4, xc4);
-      p[i]              ^= xb1[0];
-      p[i + 1]          ^= xb2[0];
-      p[i + 2]          ^= xb3[0];
-      p[i + 3]          ^= xb4[0];
+#if 0
+      p[0]  ^= _mm_extract_epi64(xb1, 0);
+      p[1]  ^= _mm_extract_epi64(xb2, 0);
+      p[2]  ^= _mm_extract_epi64(xb3, 0);
+      p[3]  ^= _mm_extract_epi64(xb4, 0);
+#else
+      xb1 =_mm_unpacklo_epi64(xb1, xb2);
+      xb3 =_mm_unpacklo_epi64(xb3, xb4);
+#if 1
+      xb2 = _mm_load_si128((__m128i*)(p));
+      xb4 = _mm_load_si128((__m128i*)(p)+1);
+#else
+      xb2 = _mm_set_epi64x(p[1], p[0]); // here _mm_load_si128 is faster than _mm_set_epi64x
+      xb4 = _mm_set_epi64x(p[3], p[2]); // (see above)
+#endif
+      xb1 = _mm_xor_si128(xb1, xb2);
+      xb3 = _mm_xor_si128(xb3, xb4);
+      _mm_store_si128((__m128i*)(p),   xb1); //16-byte aligned store
+      _mm_store_si128((__m128i*)(p)+1, xb3);
+#endif
       if constexpr(!reverse)
       {
-        p[i + stride]     ^= p[i];
-        p[i + stride + 1] ^= p[i + 1];
-        p[i + stride + 2] ^= p[i + 2];
-        p[i + stride + 3] ^= p[i + 3];
+        q[0] ^= p[0];
+        q[1] ^= p[1];
+        q[2] ^= p[2];
+        q[3] ^= p[3];
       }
+      p+=4;
     }
   }
 }
@@ -198,12 +269,13 @@ static inline void eval_degree1(const uint64_t val, uint64_t* p)
 template<unsigned int logstride, unsigned int t, class T>
 inline void mg_decompose_taylor_recursive(
     unsigned int logsize,
-    T* p)
+    T* restr pu)
 {
+  T* restr p = (T*) std::assume_aligned<16>(pu);
   static_assert(t >= 1);
   assert(logsize > t && logsize <= 2*t);
   //decompose_taylor_one_step
-  uint64_t delta_s   = 1uLL << (logstride + logsize - 1 - t); // logn - 1 - t >= 0
+  const uint64_t delta_s   = 1uLL << (logstride + logsize - 1 - t); // logn - 1 - t >= 0
   const uint64_t n_s = 1uLL  << (logstride + logsize);
   const uint64_t m_s = n_s >> 1;
   T* q = p + delta_s - m_s;

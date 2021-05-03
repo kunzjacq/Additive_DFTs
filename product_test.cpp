@@ -27,15 +27,14 @@ constexpr uint64_t max_runs = 100;
 
 // compile-time test that platform is little endian
 // (required by the implementation of 'contract' and 'expand' in mg.cpp)
-// works on gcc, probably also with Visual Studio
-static_assert( __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__);
+// gcc only
+// static_assert( __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__);
 
 static bool mateer_gao_product_test(
     unsigned int* log_sz,
     unsigned int num_sz,
     unsigned int gf2x_max_logsize,
-    bool benchmark,
-    bool do_gf2x)
+    bool benchmark)
 {
   uint64_t run_count;
   double t1 = 0, t2 = 0;
@@ -89,27 +88,29 @@ static bool mateer_gao_product_test(
       p2[i] = draw();
     }
     tm.set_start();
-    run_count = 0;
     uint32_t e_sz = 0;
-    if(do_gf2x_local)
+    if constexpr(do_gf2x)
     {
-      cout << " Performing product with gf2x" << endl;
-      do
+      run_count = 0;
+      if(do_gf2x_local)
       {
-        unsigned long ulsz = (unsigned long) (sz / (16*sizeof(unsigned long)));
-        gf2x_mul((unsigned long *) p3,(unsigned long *) p1, ulsz, (unsigned long *) p2, ulsz);
-        if(run_count == 0) e_sz =  extract<uint64_t>(p3, sz/64, e1, extract_size);
-        run_count++;
-        t1 = tm.measure();
+        cout << " Performing product with gf2x" << endl;
+        do
+        {
+          unsigned long ulsz = (unsigned long) (sz / (16*sizeof(unsigned long)));
+          gf2x_mul((unsigned long *) p3,(unsigned long *) p1, ulsz, (unsigned long *) p2, ulsz);
+          if(run_count == 0) e_sz =  extract<uint64_t>(p3, sz/64, e1, extract_size);
+          run_count++;
+          t1 = tm.measure();
+        }
+        while(benchmark && (t1 <= min_time) && (run_count < max_runs));
+        t1 /= (double) run_count;
+        cout << " gf2x runs: " << run_count << endl;
+        cout << " gf2x time per run: " << t1 << " sec." << endl;
+        // reset result
+        for(uint64_t i = 0; i < sz/64; i++) p3[i] = 0;
       }
-      while(benchmark && (t1 <= min_time) && (run_count < max_runs));
-      t1 /= (double) run_count;
-      cout << " gf2x runs: " << run_count << endl;
-      cout << " gf2x time per run: " << t1 << " sec." << endl;
-      // reset result
-      for(uint64_t i = 0; i < sz/64; i++) p3[i] = 0;
     }
-
     if(delayed_large_alloc)
     {
       try
@@ -188,7 +189,7 @@ int main(int UNUSED(argc), char** UNUSED(argv))
     exit(2);
   }
   unsigned int num_sz = sizeof(log_sz) / sizeof(unsigned int);
-  bool mateer_gao_error = mateer_gao_product_test(log_sz, num_sz, gf2x_max_size, benchmark, do_gf2x);
+  bool mateer_gao_error = mateer_gao_product_test(log_sz, num_sz, gf2x_max_size, benchmark);
   if(mateer_gao_error) cout << "Mateer-Gao product test failed" << endl;
   return mateer_gao_error? EXIT_FAILURE : EXIT_SUCCESS;
 }

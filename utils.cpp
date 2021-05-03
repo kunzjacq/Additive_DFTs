@@ -14,7 +14,7 @@ static void cpuid(uint32_t out[4], int32_t eax, int32_t ecx){
 #include <Windows.h>
 #include <intrin.h>
 static void cpuid(uint32_t out[4], int32_t eax, int32_t ecx){
-  __cpuidex(out, eax, ecx);
+  __cpuidex((int*)out, eax, ecx);
 }
 #endif
 
@@ -46,10 +46,10 @@ void print_value(const uint8_t& p_data)
 {
   if(p_data != 0)
   {
-    cout << hex << setw(2) << static_cast<unsigned int>(p_data);
+    std::cout << std::hex << std::setw(2) << static_cast<unsigned int>(p_data);
   }
   else
   {
-    cout << "--";
+    std::cout << "--";
   }
 }
