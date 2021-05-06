@@ -143,14 +143,8 @@ static inline uint64_t product(const uint64_t&a, const uint64_t&b)
  */
 static void product_batch(uint64_t* restr a_ptru, uint64_t* restr b_ptru, unsigned int logsize)
 {
-#define ALT_MEM_ACCESS
-#ifdef ALT_MEM_ACCESS
   __m128i* restr a_ptr128 = (__m128i*) std::assume_aligned<16>(a_ptru);
   __m128i* restr b_ptr128 = (__m128i*) std::assume_aligned<16>(b_ptru);
-#else
-  uint64_t* restr a_ptr = (uint64_t*) std::assume_aligned<16>(a_ptru);
-  uint64_t* restr b_ptr = (uint64_t*) std::assume_aligned<16>(b_ptru);
-#endif
 
   assert(logsize >= 2);
   const uint64_t sz = 1uLL << (logsize - 2);
@@ -159,49 +153,32 @@ static void product_batch(uint64_t* restr a_ptru, uint64_t* restr b_ptru, unsign
   __m128i xp, xa1, xa2, xa3, xa4, xb1, xb2, xb3, xb4, xc1, xc2, xc3, xc4;
 
   xp = _mm_set1_epi64x(minpoly);
-#ifndef ALT_MEM_ACCESS
-  for(uint64_t i = 0; i < sz; i++)
-  {
-    xa1 = _mm_set1_epi64x(a_ptr[0]);
-    xa2 = _mm_set1_epi64x(a_ptr[1]);
-    xa3 = _mm_set1_epi64x(a_ptr[2]);
-    xa4 = _mm_set1_epi64x(a_ptr[3]);
-    xb1 = _mm_set1_epi64x(b_ptr[0]);
-    xb2 = _mm_set1_epi64x(b_ptr[1]);
-    xb3 = _mm_set1_epi64x(b_ptr[2]);
-    xb4 = _mm_set1_epi64x(b_ptr[3]);
-#else
-  xb2 = _mm_set1_epi64x(0); // to silence warnings below (search for 'unused')
   for(uint64_t i = 0; i < sz; i ++)
   {
     xa1 = _mm_load_si128(a_ptr128);
     xa3 = _mm_load_si128(a_ptr128 + 1);
-#if 0
-    xa2 = _mm_shuffle_epi32(xa1, 0x4e);
-    xa4 = _mm_shuffle_epi32(xa3, 0x4e);
-#else
-    xa2 = _mm_unpackhi_epi64(xa1, xb2); //xb2 unused here
-    xa4 = _mm_unpackhi_epi64(xa3, xb2); //xb2 unused here
-#endif
     xb1 = _mm_load_si128(b_ptr128);
     xb3 = _mm_load_si128(b_ptr128 + 1);
-#if 0
-    xb2 = _mm_shuffle_epi32(xb1, 0x4e);
+#if 1
+    xa2 = _mm_shuffle_epi32(xa1, 0x4e); // put higher part of xa1 in xa2
+    xa4 = _mm_shuffle_epi32(xa3, 0x4e); // (dwords 3, 2, in lower part, 3*4+2 = e,
+    xb2 = _mm_shuffle_epi32(xb1, 0x4e); // 1, 0 in higher part, 1 * 4 + 0 = 4)
     xb4 = _mm_shuffle_epi32(xb3, 0x4e);
 #else
+    xa2 = _mm_unpackhi_epi64(xa1, xb2); //xa1 = upper half of xa2; xb2 unused here
+    xa4 = _mm_unpackhi_epi64(xa3, xb2); //xb2 unused here
     xb2 = _mm_unpackhi_epi64(xb1, xb2); //xb2 unused here
     xb4 = _mm_unpackhi_epi64(xb3, xb2); //xb2 unused here
-#endif
 #endif
 
     xb1 = _mm_clmulepi64_si128(xa1, xb1, 0x00);
     xb2 = _mm_clmulepi64_si128(xa2, xb2, 0x00);
     xb3 = _mm_clmulepi64_si128(xa3, xb3, 0x00);
     xb4 = _mm_clmulepi64_si128(xa4, xb4, 0x00);
-    xc1 = _mm_clmulepi64_si128(xp, xb1, 0x10);
-    xc2 = _mm_clmulepi64_si128(xp, xb2, 0x10);
-    xc3 = _mm_clmulepi64_si128(xp, xb3, 0x10);
-    xc4 = _mm_clmulepi64_si128(xp, xb4, 0x10);
+    xc1 = _mm_clmulepi64_si128(xp,  xb1, 0x10);
+    xc2 = _mm_clmulepi64_si128(xp,  xb2, 0x10);
+    xc3 = _mm_clmulepi64_si128(xp,  xb3, 0x10);
+    xc4 = _mm_clmulepi64_si128(xp,  xb4, 0x10);
     xb1 = _mm_xor_si128(xb1, xc1);
     xb2 = _mm_xor_si128(xb2, xc2);
     xb3 = _mm_xor_si128(xb3, xc3);
@@ -210,18 +187,6 @@ static void product_batch(uint64_t* restr a_ptru, uint64_t* restr b_ptru, unsign
     xc2 = _mm_clmulepi64_si128(xp, xc2, 0x10);
     xc3 = _mm_clmulepi64_si128(xp, xc3, 0x10);
     xc4 = _mm_clmulepi64_si128(xp, xc4, 0x10);
-#ifndef ALT_MEM_ACCESS
-    xb1 = _mm_xor_si128(xb1, xc1);
-    xb2 = _mm_xor_si128(xb2, xc2);
-    xb3 = _mm_xor_si128(xb3, xc3);
-    xb4 = _mm_xor_si128(xb4, xc4);
-    a_ptr[0] = _mm_extract_epi64(xb1, 0);
-    a_ptr[1] = _mm_extract_epi64(xb2, 0);
-    a_ptr[2] = _mm_extract_epi64(xb3, 0);
-    a_ptr[3] = _mm_extract_epi64(xb4, 0);
-    a_ptr += 4;
-    b_ptr += 4;
-#else
     xb1 =_mm_unpacklo_epi64(xb1, xb2); // group lower halves of xb1 and xb2 into xb1
     xc1 =_mm_unpacklo_epi64(xc1, xc2);
     xb3 =_mm_unpacklo_epi64(xb3, xb4);
@@ -232,7 +197,6 @@ static void product_batch(uint64_t* restr a_ptru, uint64_t* restr b_ptru, unsign
     _mm_store_si128(a_ptr128 + 1, xb3);
     a_ptr128 += 2;
     b_ptr128 += 2;
-#endif
   }
 }
 

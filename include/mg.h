@@ -119,25 +119,15 @@ static inline void eval_degree1(const uint64_t val,  uint64_t* restr pu)
   else if constexpr(logstride == 1)
   {
     __m128i xb1, xb2, xc1, xc2;
+
     if constexpr(reverse)
     {
       p[2] ^= p[0];
       p[3] ^= p[1];
     }
-#if 0
-    xb1 = _mm_set1_epi64x(p[2]);
-    xb2 = _mm_set1_epi64x(p[3]);
-    xb1 = _mm_clmulepi64_si128(xa, xb1, 0x00);
-    xb2 = _mm_clmulepi64_si128(xa, xb2, 0x00);
-#else
-#if 0
-    xb1 = _mm_load_si128((__m128i*)(p) + 1); // _mm_load_si128 much slower than _mm_set_epi64x here
-#else
     xb1 = _mm_set_epi64x(p[3], p[2]);
-#endif
     xb2 = _mm_clmulepi64_si128(xa, xb1, 0x10);
     xb1 = _mm_clmulepi64_si128(xa, xb1, 0x00);
-#endif
     xc1 = _mm_clmulepi64_si128(xa, xb1, 0x11);
     xc2 = _mm_clmulepi64_si128(xa, xb2, 0x11);
     xb1 = _mm_xor_si128(xb1, xc1);
@@ -146,19 +136,8 @@ static inline void eval_degree1(const uint64_t val,  uint64_t* restr pu)
     xc2 = _mm_clmulepi64_si128(xa, xc2, 0x11);
     xb1 = _mm_xor_si128(xb1, xc1);
     xb2 = _mm_xor_si128(xb2, xc2);
-#if 0
     p[0] ^= _mm_extract_epi64(xb1, 0);
     p[1] ^= _mm_extract_epi64(xb2, 0);
-#else
-    xb1 =_mm_unpacklo_epi64(xb1, xb2);
-#if 0
-    xb2 = _mm_load_si128((__m128i*)p);
-#else
-    xb2 = _mm_set_epi64x(p[1], p[0]);
-#endif
-    xb1 = _mm_xor_si128(xb1, xb2);
-    _mm_store_si128((__m128i*)p,   xb1); //16-byte aligned store
-#endif
     if constexpr(!reverse)
     {
       p[2] ^= p[0];
@@ -172,36 +151,22 @@ static inline void eval_degree1(const uint64_t val,  uint64_t* restr pu)
     {
       __m128i xb1, xb2, xb3, xb4, xc1, xc2, xc3, xc4;
       uint64_t* restr q = std::assume_aligned<16>(p + stride);
+      xb1 = _mm_set_epi64x(q[1], q[0]); // here _mm_set_epi64x is faster than _mm_load_si128
+      xb3 = _mm_set_epi64x(q[3], q[2]);
       if constexpr(reverse)
       {
-        q[0] ^= p[0];
-        q[1] ^= p[1];
-        q[2] ^= p[2];
-        q[3] ^= p[3];
+        // q[i] ^= p[i], i=0..3
+        xb2 = _mm_load_si128((__m128i*)(p));
+        xb4 = _mm_load_si128((__m128i*)(p)+1);
+        xb1 = _mm_xor_si128(xb1, xb2);
+        xb3 = _mm_xor_si128(xb3, xb4);
+        _mm_store_si128((__m128i*)(q),   xb1);
+        _mm_store_si128((__m128i*)(q)+1, xb3);
       }
-#if 0
-      xb1 = _mm_set1_epi64x(p[stride]);
-      xb2 = _mm_set1_epi64x(p[stride + 1]);
-      xb3 = _mm_set1_epi64x(p[stride + 2]);
-      xb4 = _mm_set1_epi64x(p[stride + 3]);
-      xb1 = _mm_clmulepi64_si128(xa, xb1, 0x00);
-      xb2 = _mm_clmulepi64_si128(xa, xb2, 0x00);
-      xb3 = _mm_clmulepi64_si128(xa, xb3, 0x00);
-      xb4 = _mm_clmulepi64_si128(xa, xb4, 0x00);
-#else
-#if 0
-      xb1 = _mm_set_epi64x(q[1], q[0]); // here _mm_set_epi64x is faster than _mm_load_si128
-      xb3 = _mm_set_epi64x(q[3], q[2]); //(see below)
-#else
-      xb1 = _mm_load_si128((__m128i*)(q)); // here _mm_set_epi64x is faster than _mm_load_si128
-      xb3 = _mm_load_si128((__m128i*)(q)+1); //(see below)
-#endif
       xb2 = _mm_clmulepi64_si128(xa, xb1, 0x10);
       xb4 = _mm_clmulepi64_si128(xa, xb3, 0x10);
       xb1 = _mm_clmulepi64_si128(xa, xb1, 0x00);
       xb3 = _mm_clmulepi64_si128(xa, xb3, 0x00);
-#endif
-
       xc1 = _mm_clmulepi64_si128(xa, xb1, 0x11);
       xc2 = _mm_clmulepi64_si128(xa, xb2, 0x11);
       xc3 = _mm_clmulepi64_si128(xa, xb3, 0x11);
@@ -218,32 +183,32 @@ static inline void eval_degree1(const uint64_t val,  uint64_t* restr pu)
       xb2 = _mm_xor_si128(xb2, xc2);
       xb3 = _mm_xor_si128(xb3, xc3);
       xb4 = _mm_xor_si128(xb4, xc4);
-#if 0
-      p[0]  ^= _mm_extract_epi64(xb1, 0);
-      p[1]  ^= _mm_extract_epi64(xb2, 0);
-      p[2]  ^= _mm_extract_epi64(xb3, 0);
-      p[3]  ^= _mm_extract_epi64(xb4, 0);
-#else
+      // code below equivalent to p[i]  ^= low half of xb{i+1}; i=0...3
+      //<
       xb1 =_mm_unpacklo_epi64(xb1, xb2);
       xb3 =_mm_unpacklo_epi64(xb3, xb4);
-#if 1
-      xb2 = _mm_load_si128((__m128i*)(p));
+      xb2 = _mm_load_si128((__m128i*)(p)); // here _mm_load_si128 is faster than _mm_set_epi64x
       xb4 = _mm_load_si128((__m128i*)(p)+1);
-#else
-      xb2 = _mm_set_epi64x(p[1], p[0]); // here _mm_load_si128 is faster than _mm_set_epi64x
-      xb4 = _mm_set_epi64x(p[3], p[2]); // (see above)
-#endif
       xb1 = _mm_xor_si128(xb1, xb2);
       xb3 = _mm_xor_si128(xb3, xb4);
       _mm_store_si128((__m128i*)(p),   xb1); //16-byte aligned store
       _mm_store_si128((__m128i*)(p)+1, xb3);
-#endif
+      //>
       if constexpr(!reverse)
       {
+#if 0
         q[0] ^= p[0];
         q[1] ^= p[1];
         q[2] ^= p[2];
         q[3] ^= p[3];
+#else
+        xb2 = _mm_load_si128((__m128i*)(q));
+        xb4 = _mm_load_si128((__m128i*)(q)+1);
+        xb2 = _mm_xor_si128(xb1, xb2);
+        xb4 = _mm_xor_si128(xb3, xb4);
+        _mm_store_si128((__m128i*)(q),   xb2);
+        _mm_store_si128((__m128i*)(q)+1, xb4);
+#endif
       }
       p+=4;
     }
