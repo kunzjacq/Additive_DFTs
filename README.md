@@ -69,7 +69,7 @@ As an example, when processing the largest example above, i.e. a product of two 
 
 ### Product CPU requirements
 
-The polynomial product code uses a fast implementation of multiplication in GF(2<sup>64</sup>) that uses SSE2 and PCLMULQDQ instruction sets. Their availability is checked at the beginning of the test programs.
+The polynomial product code uses a fast implementation of multiplication in GF(2<sup>64</sup>), which is implemented multiple ways in the source, using AVX2, BMI1, POPCNT and PCLMULQDQ instructions. The availability of these instructions is checked by the test programs.
 
 ## Cantor bases for large field sizes
 
