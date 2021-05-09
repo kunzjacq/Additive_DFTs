@@ -54,6 +54,36 @@ static constexpr uint64_t beta_over_mult[] = {
 };
 #endif
 
+void naive_product(uint64_t* p1u, uint64_t n1, uint64_t* p2u, uint64_t n2, uint64_t* qu)
+{
+  __m128i* restr p1 = (__m128i*) std::assume_aligned<16>(p1u);
+  __m128i* restr p2 = (__m128i*) std::assume_aligned<16>(p2u);
+  __m128i* restr q  = (__m128i*) std::assume_aligned<16>(qu);
+  for(uint64_t i = 0; i < n1 + n2; i++) qu[i] = 0;
+  n1 = (n1 + 1) >> 1;
+  n2 = (n2 + 1) >> 1;
+  for(uint64_t i = 0; i < n1; i++)
+  {
+    __m128i x = _mm_load_si128(p1 + i);
+    __m128i next = _mm_set1_epi8(0x0);
+    for(uint64_t j = 0; j < n2; j++)
+    {
+      __m128i y = _mm_load_si128(p2 + j);
+      __m128i z1 = _mm_clmulepi64_si128(x, y, 0x00);
+      __m128i z2 = _mm_clmulepi64_si128(x, y, 0x01);
+      z1 ^= next;
+      __m128i z4 = _mm_clmulepi64_si128(x, y, 0x11);
+      z2 ^= _mm_clmulepi64_si128(x, y, 0x10);
+      __m128i z3 = _mm_set_epi64x(_mm_extract_epi64(z2, 0), 0x0);
+      __m128i z5 = _mm_set_epi64x(0x0, _mm_extract_epi64(z2, 1));
+      z1 ^= z3;
+      next = z4 ^ z5;
+      q[i + j] ^= z1;
+    }
+    q[i + n2] ^= next;
+  }
+}
+
 /**
  * @brief expand
  * Space each 32-bit word of 'source' with a null 32-bit word into 'dest'.
@@ -252,7 +282,7 @@ inline void mg_core(
       // on input: there are 2**'logstride' interleaved series of size 'eta' = 2**(2*logsize-t);
       if(!first_taylor_done)
       {
-        mg_decompose_taylor_recursive<logstride,t, uint64_t>(logsize, poly);
+        mg_decompose_taylor_recursive<logstride, t, uint64_t>(logsize, poly);
       }
       // fft on columns
       // if logsize >= t, each fft should process 2**(logsize - t) values
@@ -261,7 +291,7 @@ inline void mg_core(
       mg_core<s - 1, logstride + t>(poly, offsets_mult + t, logsize - t, false);
       uint64_t offsets_local[t];
       for(unsigned int j = 0; j < t; j++) offsets_local[j] = offsets_mult[j];
-      // 2*t >= logsize > t, therefore tau < 2**t
+      // 2*t >= logsize > t, therefore tau = 2**(logsize - t) <= 2**t
       const uint64_t tau   = 1uLL <<  (logsize - t);
 #ifndef GRAY_CODE
       const uint64_t row_size = 1uLL << (t + logstride);
@@ -548,9 +578,7 @@ void mg_binary_polynomial_multiply_in_place (uint64_t* p1, uint64_t* p2, uint64_
   const uint64_t sz_result = 1uLL << logsize_result;
   expand(p1, p1, d1, sz_result);
   mg_smalldegree<s>((uint64_t*) p1, logsize_1, logsize_result);
-
   mg_smalldegree_with_buf<s>(p2, logsize_2, logsize_result, p1);
-
   mg_reverse_core<s,0>(p1, offsets_mult, logsize_result);
   contract(p1, p1, d1 + d2);
 }

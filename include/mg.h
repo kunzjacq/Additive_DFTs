@@ -21,6 +21,7 @@
 #endif
 #endif
 
+void naive_product(uint64_t* p1u, uint64_t n1, uint64_t* p2u, uint64_t n2, uint64_t* qu);
 
 /**
  * @brief binary_polynomial_multiply
@@ -125,9 +126,9 @@ static inline void eval_degree1(const uint64_t val,  uint64_t* restr pu)
       p[2] ^= p[0];
       p[3] ^= p[1];
     }
-    xb1 = _mm_set_epi64x(p[3], p[2]);
-    xb2 = _mm_clmulepi64_si128(xa, xb1, 0x10);
-    xb1 = _mm_clmulepi64_si128(xa, xb1, 0x00);
+    xb2 = _mm_set_epi64x(p[3], p[2]);
+    xb1 = _mm_clmulepi64_si128(xa, xb2, 0x00);
+    xb2 = _mm_clmulepi64_si128(xa, xb2, 0x10);
     xc1 = _mm_clmulepi64_si128(xa, xb1, 0x11);
     xc2 = _mm_clmulepi64_si128(xa, xb2, 0x11);
     xb1 = _mm_xor_si128(xb1, xc1);
@@ -245,6 +246,8 @@ inline void mg_decompose_taylor_recursive(
   const uint64_t m_s = n_s >> 1;
   T* q = p + delta_s - m_s;
   // m_s > 0, hence the loop below is not infinite
+  // see however the discussion in mg_decompose_taylor_reverse_recursive about undefined behavior
+  // in the loop
   for(uint64_t i = n_s - 1; i > m_s - 1; i--) q[i] ^= p[i];
 
   if(logsize > t + 1)
@@ -280,5 +283,9 @@ inline void mg_decompose_taylor_reverse_recursive(
   //decompose_taylor_one_step_reverse
   uint64_t delta_s   = 1uLL << (logstride + logsize - 1 - t); // logn - 1 - t >= 0
   uint64_t* q = p + delta_s - m_s;
+  // 'warning: iteration 2305843009213693951 invokes undefined behavior [-Waggressive-loop-optimizations]'
+  // 2305843009213693951 = 0x1fffffffffffffff = 2**61 - 1
+  // since sizeof(uint64_t) = 8, this is an index value where p[i] necessarily wraps
+  // (depending on the value of p, it may of course wrap sooner).
   for(uint64_t i = m_s; i < n_s; i++) q[i] ^= p[i];
 }

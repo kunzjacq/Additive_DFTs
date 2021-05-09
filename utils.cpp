@@ -19,26 +19,36 @@ static void cpuid(uint32_t out[4], int32_t eax, int32_t ecx){
 #endif
 
 /**
-  Detects whether CPU has SSE2 and PCLMULQDQ, which are required for the fast GF2**64
-  implementation used by DFT algorithms.
+  CPU features detection
  */
 bool detect_cpu_features()
 {
   uint32_t info[4];
   cpuid(info, 0, 0);
-  int n_ids = info[0];
-  bool has_SSE2   = false;
-  bool has_PCLMUL = false;
-  if(n_ids >= 1)
-  {
-    cpuid(info, 1, 0);
-    //has_MMX    = (info[3] & (1uLL << 23)) != 0;
-    //has_SSE    = (info[3] & (1uLL << 25)) != 0;
-    //has_RDRAND = (info[2] & (1uLL << 30)) != 0;
-    has_SSE2   = (info[3] & (1uLL << 26)) != 0;
-    has_PCLMUL = (info[2] & (1uLL << 1 )) != 0;
-  }
-  return has_SSE2 && has_PCLMUL;
+  unsigned int n_ids = info[0];
+  if (n_ids <= 7) return false;
+
+  cpuid(info, 1, 0);
+  //bool has_mmx    = (info[3] & (1uLL << 23)) != 0;
+  //bool has_sse    = (info[3] & (1uLL << 25)) != 0;
+  //bool has_rdrand = (info[2] & (1uLL << 30)) != 0;
+  //bool has_avx    = (info[2] & (1uLL << 28)) != 0;
+  //bool has_sse2   = (info[3] & (1uLL << 26)) != 0;
+  //bool has_aesni  = (info[2] & (1uLL << 25)) != 0;
+  bool has_popcnt = (info[2] & (1uLL << 23)) != 0;
+  bool has_pclmul = (info[2] & (1uLL << 1 )) != 0;
+
+  cpuid(info, 7, 0);
+  //bool has_bmi2   = (info[1] & (1uLL << 8)) != 0;
+  //bool has_gfni   = (info[2] & (1uLL << 3)) != 0;
+  //bool has_rdseed = (info[1] & (1uLL << 18)) != 0;
+  bool has_bmi1 = (info[1] & (1uLL << 3)) != 0;
+  bool has_avx2 = (info[1] & (1uLL << 5)) != 0;
+
+  // cpuid(info, 0x80000001, 0);
+  // bool has_abm = (info[2] & (1uLL << 5)) != 0; // Advanced bit manipulation (lzcnt and popcnt)
+
+  return has_popcnt && has_bmi1 && has_avx2 && has_pclmul;
 }
 
 template <>

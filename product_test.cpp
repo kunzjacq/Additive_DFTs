@@ -15,6 +15,12 @@ using namespace std;
 constexpr bool do_gf2x = true;
 // choose between in-place or out-of-place product variants of Mateer-Gao product
 constexpr bool test_in_place_variant = true;
+constexpr bool test_naive_product = false; // test or benchmark a naive implementation of polynomial
+// product instead of the DFT-based one. Forces an out-of-place computation.
+
+constexpr unsigned int gf2x_max_logsize = 35;
+constexpr unsigned int naive_max_logsize = 18;
+
 
 // benchmark Mateer-Gao product
 // (if false, only one run is done for each tested size; if true, many runs are done
@@ -24,6 +30,7 @@ constexpr bool benchmark = true;
 constexpr double min_time = 2.;
 // maximum number of runs for each test
 constexpr uint64_t max_runs = 100;
+//constexpr uint64_t max_runs = 1;
 
 // compile-time test that platform is little endian
 // (required by the implementation of 'contract' and 'expand' in mg.cpp)
@@ -33,7 +40,6 @@ constexpr uint64_t max_runs = 100;
 static bool mateer_gao_product_test(
     unsigned int* log_sz,
     unsigned int num_sz,
-    unsigned int gf2x_max_logsize,
     bool benchmark)
 {
   uint64_t run_count;
@@ -56,10 +62,14 @@ static bool mateer_gao_product_test(
     const uint64_t lsz = log_sz[j];
     const uint64_t sz = 1uLL << lsz;
     const bool do_gf2x_local = do_gf2x && lsz <= gf2x_max_logsize;
+    const bool do_naive_local = do_gf2x && lsz <= naive_max_logsize;
     // delay large allocation needed by in-place variant of MG product when comparing to gf2x,
     // in order for gf2x to have as much available space as possible
-    const bool large_alloc_first = !do_gf2x_local && test_in_place_variant;
-    const bool delayed_large_alloc = do_gf2x_local && test_in_place_variant;
+    constexpr bool compute_in_place = test_in_place_variant && !test_naive_product;
+    const bool large_alloc_first = !do_gf2x_local && compute_in_place;
+    const bool delayed_large_alloc = do_gf2x_local && compute_in_place;
+    bool compare = do_gf2x_local && (!test_naive_product || do_naive_local);
+
     // buffer size needed, in bytes
     cout << endl;
     cout << "Multiplying 2 polynomials of degree (2**" << lsz-1 << ")-1 = " << sz/2 - 1 << endl;
@@ -136,27 +146,32 @@ static bool mateer_gao_product_test(
     run_count = 0;
     do
     {
-      if constexpr(test_in_place_variant)
+      if constexpr(compute_in_place)
       {
         mg_binary_polynomial_multiply_in_place(p1, p2, sz/2 - 1, sz/2 - 1);
       }
       else
       {
-        mg_binary_polynomial_multiply(p1, p2, p3, sz/2 - 1, sz/2 - 1);
+        if constexpr(test_naive_product)
+        {
+          if(do_naive_local) naive_product(p1, sz/128, p2, sz/128, p3);
+        }
+        else
+        {
+          mg_binary_polynomial_multiply(p1, p2, p3, sz/2 - 1, sz/2 - 1);
+        }
       }
-      uint64_t* result = test_in_place_variant ? p1 : p3;
-      if(run_count == 0) extract<uint64_t>(result, sz/64, e2, extract_size);
+      uint64_t* result = compute_in_place ? p1 : p3;
+      if(compare && (run_count == 0)) extract<uint64_t>(result, sz/64, e2, extract_size);
       run_count++;
       t2 = tm.measure();
 
     }
     while(benchmark && (t2 <= min_time) && (run_count < max_runs));
     t2 /= (double) run_count;
-
     cout << " Mateer-Gao runs: " << run_count << endl;
     cout << " Mateer-Gao product time per run: " << t2 << " sec." << endl;
-
-    if(do_gf2x_local)
+    if(compare)
     {
       cout << " MG / gf2x speed ratio: " << t1 / t2 << endl;
       // compare results
@@ -180,16 +195,18 @@ static bool mateer_gao_product_test(
 
 int main(int UNUSED(argc), char** UNUSED(argv))
 {
+  // FIXME log_sz = 7 (product of 2 64-bit polynomials) shows a difference between both
+  // the naive product implementation and the DFT implentation differ from gf2x.
   unsigned int log_sz[] = {10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37};
-  unsigned int gf2x_max_size = 35;
-  bool cpu_has_SSE2_and_PCMUL = detect_cpu_features();
-  if(!cpu_has_SSE2_and_PCMUL)
+  //unsigned int log_sz[] = {8,9,10,11,12,13,14,15,16,17,18};
+  bool cpu_has_required_flags = detect_cpu_features();
+  if(!cpu_has_required_flags)
   {
-    cout << "SSE2 and PCMULQDQ are required. Exiting" << endl;
+    cout << "cpu flags required not present (AVX2, PCMULQDQ, POPCNT, BMI1). Exiting" << endl;
     exit(2);
   }
   unsigned int num_sz = sizeof(log_sz) / sizeof(unsigned int);
-  bool mateer_gao_error = mateer_gao_product_test(log_sz, num_sz, gf2x_max_size, benchmark);
+  bool mateer_gao_error = mateer_gao_product_test(log_sz, num_sz, benchmark);
   if(mateer_gao_error) cout << "Mateer-Gao product test failed" << endl;
   return mateer_gao_error? EXIT_FAILURE : EXIT_SUCCESS;
 }

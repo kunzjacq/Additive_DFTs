@@ -46,6 +46,7 @@ endif()
 
 if ((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") OR (CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
   set(WARN_FLAGS "-Wall -Wextra")
+  # architecture flags strictly needed to compile the code: -mavx2 -mpclmul -mbmi
   set(CMAKE_C_FLAGS   "-march=native -mtune=native ${CMAKE_C_FLAGS}   ${WARN_FLAGS}")
   if(MINGW)
       set(CMAKE_C_FLAGS "-D__USE_MINGW_ANSI_STDIO=1 ${CMAKE_C_FLAGS}")
