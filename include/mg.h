@@ -145,75 +145,399 @@ static inline void eval_degree1(const uint64_t val,  uint64_t* restr pu)
       p[3] ^= p[1];
     }
   }
-  else
+  else //if constexpr(logstride == 2) // best larger stride on ryzen 2 processors
   {
-    const uint64_t stride = 1uLL << logstride;
+    constexpr uint64_t stride = 1uLL << logstride;
+    uint64_t* restr q = std::assume_aligned<16>(p + stride);
     for(uint64_t i = 0; i < stride; i += 4)
     {
-      __m128i xb1, xb2, xb3, xb4, xc1, xc2, xc3, xc4;
-      uint64_t* restr q = std::assume_aligned<16>(p + stride);
-      xb1 = _mm_set_epi64x(q[1], q[0]); // here _mm_set_epi64x is faster than _mm_load_si128
-      xb3 = _mm_set_epi64x(q[3], q[2]);
+      __m128i xb[4], xc[4];
+#if 1
+      xb[0] = _mm_set_epi64x(q[1], q[0]); // here _mm_set_epi64x is faster than _mm_load_si128 (ryzen 2)
+      xb[2] = _mm_set_epi64x(q[3], q[2]);
+#else
+      xb[0] = _mm_load_si128((__m128i*)(q));
+      xb[2] = _mm_load_si128((__m128i*)(q)+1);
+#endif
       if constexpr(reverse)
       {
-        // q[i] ^= p[i], i=0..3
-        xb2 = _mm_load_si128((__m128i*)(p));
-        xb4 = _mm_load_si128((__m128i*)(p)+1);
-        xb1 = _mm_xor_si128(xb1, xb2);
-        xb3 = _mm_xor_si128(xb3, xb4);
-        _mm_store_si128((__m128i*)(q),   xb1);
-        _mm_store_si128((__m128i*)(q)+1, xb3);
+        // q[i] ^= p[i], i = 0 ... 3
+        xb[1] = _mm_load_si128((__m128i*)(p));
+        xb[3] = _mm_load_si128((__m128i*)(p)+1);
+        xb[0] = _mm_xor_si128(xb[0], xb[1]);
+        xb[2] = _mm_xor_si128(xb[2], xb[3]);
+        _mm_store_si128((__m128i*)(q),   xb[0]);
+        _mm_store_si128((__m128i*)(q)+1, xb[2]);
       }
-      xb2 = _mm_clmulepi64_si128(xa, xb1, 0x10);
-      xb4 = _mm_clmulepi64_si128(xa, xb3, 0x10);
-      xb1 = _mm_clmulepi64_si128(xa, xb1, 0x00);
-      xb3 = _mm_clmulepi64_si128(xa, xb3, 0x00);
-      xc1 = _mm_clmulepi64_si128(xa, xb1, 0x11);
-      xc2 = _mm_clmulepi64_si128(xa, xb2, 0x11);
-      xc3 = _mm_clmulepi64_si128(xa, xb3, 0x11);
-      xc4 = _mm_clmulepi64_si128(xa, xb4, 0x11);
-      xb1 = _mm_xor_si128(xb1, xc1);
-      xb2 = _mm_xor_si128(xb2, xc2);
-      xb3 = _mm_xor_si128(xb3, xc3);
-      xb4 = _mm_xor_si128(xb4, xc4);
-      xc1 = _mm_clmulepi64_si128(xa, xc1, 0x11);
-      xc2 = _mm_clmulepi64_si128(xa, xc2, 0x11);
-      xc3 = _mm_clmulepi64_si128(xa, xc3, 0x11);
-      xc4 = _mm_clmulepi64_si128(xa, xc4, 0x11);
-      xb1 = _mm_xor_si128(xb1, xc1);
-      xb2 = _mm_xor_si128(xb2, xc2);
-      xb3 = _mm_xor_si128(xb3, xc3);
-      xb4 = _mm_xor_si128(xb4, xc4);
-      // code below equivalent to p[i]  ^= low half of xb{i+1}; i=0...3
+      xb[1] = _mm_clmulepi64_si128(xa, xb[0], 0x10);
+      xb[3] = _mm_clmulepi64_si128(xa, xb[2], 0x10);
+      xb[0] = _mm_clmulepi64_si128(xa, xb[0], 0x00);
+      xb[2] = _mm_clmulepi64_si128(xa, xb[2], 0x00);
+      xc[0] = _mm_clmulepi64_si128(xa, xb[0], 0x11);
+      xc[1] = _mm_clmulepi64_si128(xa, xb[1], 0x11);
+      xc[2] = _mm_clmulepi64_si128(xa, xb[2], 0x11);
+      xc[3] = _mm_clmulepi64_si128(xa, xb[3], 0x11);
+      xb[0] = _mm_xor_si128(xb[0], xc[0]);
+      xb[1] = _mm_xor_si128(xb[1], xc[1]);
+      xb[2] = _mm_xor_si128(xb[2], xc[2]);
+      xb[3] = _mm_xor_si128(xb[3], xc[3]);
+      xc[0] = _mm_clmulepi64_si128(xa, xc[0], 0x11);
+      xc[1] = _mm_clmulepi64_si128(xa, xc[1], 0x11);
+      xc[2] = _mm_clmulepi64_si128(xa, xc[2], 0x11);
+      xc[3] = _mm_clmulepi64_si128(xa, xc[3], 0x11);
+      xb[0] = _mm_xor_si128(xb[0], xc[0]);
+      xb[1] = _mm_xor_si128(xb[1], xc[1]);
+      xb[2] = _mm_xor_si128(xb[2], xc[2]);
+      xb[3] = _mm_xor_si128(xb[3], xc[3]);
+      // code below equivalent to p[i]  ^= low half of xb[i], i = 0 ... 3
       //<
-      xb1 =_mm_unpacklo_epi64(xb1, xb2);
-      xb3 =_mm_unpacklo_epi64(xb3, xb4);
-      xb2 = _mm_load_si128((__m128i*)(p)); // here _mm_load_si128 is faster than _mm_set_epi64x
-      xb4 = _mm_load_si128((__m128i*)(p)+1);
-      xb1 = _mm_xor_si128(xb1, xb2);
-      xb3 = _mm_xor_si128(xb3, xb4);
-      _mm_store_si128((__m128i*)(p),   xb1); //16-byte aligned store
-      _mm_store_si128((__m128i*)(p)+1, xb3);
+      xb[0] =_mm_unpacklo_epi64(xb[0], xb[1]);
+      xb[2] =_mm_unpacklo_epi64(xb[2], xb[3]);
+      xb[1] = _mm_load_si128((__m128i*)(p)); // here _mm_load_si128 is faster than _mm_set_epi64x
+      xb[3] = _mm_load_si128((__m128i*)(p)+1);
+      xb[0] = _mm_xor_si128(xb[0], xb[1]);
+      xb[2] = _mm_xor_si128(xb[2], xb[3]);
+      _mm_store_si128((__m128i*)(p),   xb[0]); //16-byte aligned store
+      _mm_store_si128((__m128i*)(p)+1, xb[2]);
       //>
       if constexpr(!reverse)
       {
-#if 0
-        q[0] ^= p[0];
-        q[1] ^= p[1];
-        q[2] ^= p[2];
-        q[3] ^= p[3];
-#else
-        xb2 = _mm_load_si128((__m128i*)(q));
-        xb4 = _mm_load_si128((__m128i*)(q)+1);
-        xb2 = _mm_xor_si128(xb1, xb2);
-        xb4 = _mm_xor_si128(xb3, xb4);
-        _mm_store_si128((__m128i*)(q),   xb2);
-        _mm_store_si128((__m128i*)(q)+1, xb4);
-#endif
+        // q[i] ^= p[i], i = 0 ... 3
+        xb[1] = _mm_load_si128((__m128i*)(q)  );
+        xb[3] = _mm_load_si128((__m128i*)(q)+1);
+        xb[0] = _mm_xor_si128(xb[0], xb[1]);
+        xb[2] = _mm_xor_si128(xb[2], xb[3]);
+        _mm_store_si128((__m128i*)(q),   xb[0]);
+        _mm_store_si128((__m128i*)(q)+1, xb[2]);
       }
-      p+=4;
+      p += 4;
+      q += 4;
     }
   }
+#if 0
+  else //if constexpr(logstride == 3) // best larger stride on intel core 8 processors
+  {
+    constexpr uint64_t stride = 1uLL << logstride;
+    uint64_t* restr q = std::assume_aligned<16>(p + stride);
+    for(uint64_t i = 0; i < stride; i += 8)
+    {
+      __m128i xb[8], xc[8];
+#if 0
+      xb[0] = _mm_set_epi64x(q[1], q[0]); // here _mm_load_si128 is faster than _mm_set_epi64x (intel core 8)
+      xb[2] = _mm_set_epi64x(q[3], q[2]);
+      xb[4] = _mm_set_epi64x(q[5], q[4]);
+      xb[6] = _mm_set_epi64x(q[7], q[6]);
+#else
+      xb[0] = _mm_load_si128((__m128i*)(q));
+      xb[2] = _mm_load_si128((__m128i*)(q)+1);
+      xb[4] = _mm_load_si128((__m128i*)(q)+2);
+      xb[6] = _mm_load_si128((__m128i*)(q)+3);
+#endif
+      if constexpr(reverse)
+      {
+        // q[i] ^= p[i], i = 0 ... 7
+        xb[1] = _mm_load_si128((__m128i*)(p));
+        xb[3] = _mm_load_si128((__m128i*)(p)+1);
+        xb[5] = _mm_load_si128((__m128i*)(p)+2);
+        xb[7] = _mm_load_si128((__m128i*)(p)+3);
+        xb[0] = _mm_xor_si128(xb[0], xb[1]);
+        xb[2] = _mm_xor_si128(xb[2], xb[3]);
+        xb[4] = _mm_xor_si128(xb[4], xb[5]);
+        xb[6] = _mm_xor_si128(xb[6], xb[7]);
+        _mm_store_si128((__m128i*)(q),   xb[0]);
+        _mm_store_si128((__m128i*)(q)+1, xb[2]);
+        _mm_store_si128((__m128i*)(q)+2, xb[4]);
+        _mm_store_si128((__m128i*)(q)+3, xb[6]);
+      }
+      xb[1] = _mm_clmulepi64_si128(xa, xb[0], 0x10);
+      xb[3] = _mm_clmulepi64_si128(xa, xb[2], 0x10);
+      xb[5] = _mm_clmulepi64_si128(xa, xb[4], 0x10);
+      xb[7] = _mm_clmulepi64_si128(xa, xb[6], 0x10);
+      xb[0] = _mm_clmulepi64_si128(xa, xb[0], 0x00);
+      xb[2] = _mm_clmulepi64_si128(xa, xb[2], 0x00);
+      xb[4] = _mm_clmulepi64_si128(xa, xb[4], 0x00);
+      xb[6] = _mm_clmulepi64_si128(xa, xb[6], 0x00);
+      xc[0] = _mm_clmulepi64_si128(xa, xb[0], 0x11);
+      xc[1] = _mm_clmulepi64_si128(xa, xb[1], 0x11);
+      xc[2] = _mm_clmulepi64_si128(xa, xb[2], 0x11);
+      xc[3] = _mm_clmulepi64_si128(xa, xb[3], 0x11);
+      xc[4] = _mm_clmulepi64_si128(xa, xb[4], 0x11);
+      xc[5] = _mm_clmulepi64_si128(xa, xb[5], 0x11);
+      xc[6] = _mm_clmulepi64_si128(xa, xb[6], 0x11);
+      xc[7] = _mm_clmulepi64_si128(xa, xb[7], 0x11);
+      xb[0] = _mm_xor_si128(xb[0], xc[0]);
+      xb[1] = _mm_xor_si128(xb[1], xc[1]);
+      xb[2] = _mm_xor_si128(xb[2], xc[2]);
+      xb[3] = _mm_xor_si128(xb[3], xc[3]);
+      xb[4] = _mm_xor_si128(xb[4], xc[4]);
+      xb[5] = _mm_xor_si128(xb[5], xc[5]);
+      xb[6] = _mm_xor_si128(xb[6], xc[6]);
+      xb[7] = _mm_xor_si128(xb[7], xc[7]);
+      xc[0] = _mm_clmulepi64_si128(xa, xc[0], 0x11);
+      xc[1] = _mm_clmulepi64_si128(xa, xc[1], 0x11);
+      xc[2] = _mm_clmulepi64_si128(xa, xc[2], 0x11);
+      xc[3] = _mm_clmulepi64_si128(xa, xc[3], 0x11);
+      xc[4] = _mm_clmulepi64_si128(xa, xc[4], 0x11);
+      xc[5] = _mm_clmulepi64_si128(xa, xc[5], 0x11);
+      xc[6] = _mm_clmulepi64_si128(xa, xc[6], 0x11);
+      xc[7] = _mm_clmulepi64_si128(xa, xc[7], 0x11);
+      xb[0] = _mm_xor_si128(xb[0], xc[0]);
+      xb[1] = _mm_xor_si128(xb[1], xc[1]);
+      xb[2] = _mm_xor_si128(xb[2], xc[2]);
+      xb[3] = _mm_xor_si128(xb[3], xc[3]);
+      xb[4] = _mm_xor_si128(xb[4], xc[4]);
+      xb[5] = _mm_xor_si128(xb[5], xc[5]);
+      xb[6] = _mm_xor_si128(xb[6], xc[6]);
+      xb[7] = _mm_xor_si128(xb[7], xc[7]);
+
+      // code below equivalent to p[i]  ^= low half of xb[i], i = 0 ... 7
+      //<
+      xb[0] =_mm_unpacklo_epi64(xb[0], xb[1]);
+      xb[2] =_mm_unpacklo_epi64(xb[2], xb[3]);
+      xb[4] =_mm_unpacklo_epi64(xb[4], xb[5]);
+      xb[6] =_mm_unpacklo_epi64(xb[6], xb[7]);
+      xb[1] = _mm_load_si128((__m128i*)(p)); // here _mm_load_si128 is faster than _mm_set_epi64x
+      xb[3] = _mm_load_si128((__m128i*)(p)+1);
+      xb[5] = _mm_load_si128((__m128i*)(p)+2);
+      xb[7] = _mm_load_si128((__m128i*)(p)+3);
+      xb[0] = _mm_xor_si128(xb[0], xb[1]);
+      xb[2] = _mm_xor_si128(xb[2], xb[3]);
+      xb[4] = _mm_xor_si128(xb[4], xb[5]);
+      xb[6] = _mm_xor_si128(xb[6], xb[7]);
+      _mm_store_si128((__m128i*)(p),   xb[0]); //16-byte aligned store
+      _mm_store_si128((__m128i*)(p)+1, xb[2]);
+      _mm_store_si128((__m128i*)(p)+2, xb[4]);
+      _mm_store_si128((__m128i*)(p)+3, xb[6]);
+      //>
+      if constexpr(!reverse)
+      {
+        // q[i] ^= p[i], i = 0 ... 7
+        xb[1] = _mm_load_si128((__m128i*)(q));
+        xb[3] = _mm_load_si128((__m128i*)(q)+1);
+        xb[5] = _mm_load_si128((__m128i*)(q)+2);
+        xb[7] = _mm_load_si128((__m128i*)(q)+3);
+        xb[0] = _mm_xor_si128(xb[0], xb[1]);
+        xb[2] = _mm_xor_si128(xb[2], xb[3]);
+        xb[4] = _mm_xor_si128(xb[4], xb[5]);
+        xb[6] = _mm_xor_si128(xb[6], xb[7]);
+        _mm_store_si128((__m128i*)(q),   xb[0]);
+        _mm_store_si128((__m128i*)(q)+1, xb[2]);
+        _mm_store_si128((__m128i*)(q)+2, xb[4]);
+        _mm_store_si128((__m128i*)(q)+3, xb[6]);
+      }
+      p+=8;
+      q+=8;
+    }
+  }
+#endif
+#if 0
+  else // logstride >=4
+  {
+    constexpr uint64_t stride = 1uLL << logstride;
+    uint64_t* restr q = std::assume_aligned<16>(p + stride);
+    for(uint64_t i = 0; i < stride; i += 16)
+    {
+      __m128i xb[16], xc[16];
+      xb[0] = _mm_load_si128((__m128i*)(q));
+      xb[2] = _mm_load_si128((__m128i*)(q)+1);
+      xb[4] = _mm_load_si128((__m128i*)(q)+2);
+      xb[6] = _mm_load_si128((__m128i*)(q)+3);
+      xb[8] = _mm_load_si128((__m128i*)(q)+4);
+      xb[10] = _mm_load_si128((__m128i*)(q)+5);
+      xb[12] = _mm_load_si128((__m128i*)(q)+6);
+      xb[14] = _mm_load_si128((__m128i*)(q)+7);
+      if constexpr(reverse)
+      {
+        // q[i] ^= p[i], i = 0 ... 7
+        xb[1] = _mm_load_si128((__m128i*)(p));
+        xb[3] = _mm_load_si128((__m128i*)(p)+1);
+        xb[5] = _mm_load_si128((__m128i*)(p)+2);
+        xb[7] = _mm_load_si128((__m128i*)(p)+3);
+        xb[9] = _mm_load_si128((__m128i*)(p)+4);
+        xb[11] = _mm_load_si128((__m128i*)(p)+5);
+        xb[13] = _mm_load_si128((__m128i*)(p)+6);
+        xb[15] = _mm_load_si128((__m128i*)(p)+7);
+
+        xb[0] = _mm_xor_si128(xb[0], xb[1]);
+        xb[2] = _mm_xor_si128(xb[2], xb[3]);
+        xb[4] = _mm_xor_si128(xb[4], xb[5]);
+        xb[6] = _mm_xor_si128(xb[6], xb[7]);
+        xb[8] = _mm_xor_si128(xb[8], xb[9]);
+        xb[10] = _mm_xor_si128(xb[10], xb[11]);
+        xb[12] = _mm_xor_si128(xb[12], xb[13]);
+        xb[14] = _mm_xor_si128(xb[14], xb[15]);
+
+        _mm_store_si128((__m128i*)(q),   xb[0]);
+        _mm_store_si128((__m128i*)(q)+1, xb[2]);
+        _mm_store_si128((__m128i*)(q)+2, xb[4]);
+        _mm_store_si128((__m128i*)(q)+3, xb[6]);
+        _mm_store_si128((__m128i*)(q)+4, xb[8]);
+        _mm_store_si128((__m128i*)(q)+5, xb[10]);
+        _mm_store_si128((__m128i*)(q)+6, xb[12]);
+        _mm_store_si128((__m128i*)(q)+7, xb[14]);
+      }
+      xb[0x1] = _mm_clmulepi64_si128(xa, xb[0x0], 0x10);
+      xb[0x3] = _mm_clmulepi64_si128(xa, xb[0x2], 0x10);
+      xb[0x5] = _mm_clmulepi64_si128(xa, xb[0x4], 0x10);
+      xb[0x7] = _mm_clmulepi64_si128(xa, xb[0x6], 0x10);
+      xb[0x9] = _mm_clmulepi64_si128(xa, xb[0x8], 0x10);
+      xb[0xb] = _mm_clmulepi64_si128(xa, xb[0xa], 0x10);
+      xb[0xd] = _mm_clmulepi64_si128(xa, xb[0xc], 0x10);
+      xb[0xf] = _mm_clmulepi64_si128(xa, xb[0xe], 0x10);
+
+      xb[0x0] = _mm_clmulepi64_si128(xa, xb[0x0], 0x00);
+      xb[0x2] = _mm_clmulepi64_si128(xa, xb[0x2], 0x00);
+      xb[0x4] = _mm_clmulepi64_si128(xa, xb[0x4], 0x00);
+      xb[0x6] = _mm_clmulepi64_si128(xa, xb[0x6], 0x00);
+      xb[0x8] = _mm_clmulepi64_si128(xa, xb[0x8], 0x00);
+      xb[0xa] = _mm_clmulepi64_si128(xa, xb[0xa], 0x00);
+      xb[0xc] = _mm_clmulepi64_si128(xa, xb[0xc], 0x00);
+      xb[0xe] = _mm_clmulepi64_si128(xa, xb[0xe], 0x00);
+
+      xc[0x0] = _mm_clmulepi64_si128(xa, xb[0x0], 0x11);
+      xc[0x1] = _mm_clmulepi64_si128(xa, xb[0x1], 0x11);
+      xc[0x2] = _mm_clmulepi64_si128(xa, xb[0x2], 0x11);
+      xc[0x3] = _mm_clmulepi64_si128(xa, xb[0x3], 0x11);
+      xc[0x4] = _mm_clmulepi64_si128(xa, xb[0x4], 0x11);
+      xc[0x5] = _mm_clmulepi64_si128(xa, xb[0x5], 0x11);
+      xc[0x6] = _mm_clmulepi64_si128(xa, xb[0x6], 0x11);
+      xc[0x7] = _mm_clmulepi64_si128(xa, xb[0x7], 0x11);
+      xc[0x8] = _mm_clmulepi64_si128(xa, xb[0x8], 0x11);
+      xc[0x9] = _mm_clmulepi64_si128(xa, xb[0x9], 0x11);
+      xc[0xa] = _mm_clmulepi64_si128(xa, xb[0xa], 0x11);
+      xc[0xb] = _mm_clmulepi64_si128(xa, xb[0xb], 0x11);
+      xc[0xc] = _mm_clmulepi64_si128(xa, xb[0xc], 0x11);
+      xc[0xd] = _mm_clmulepi64_si128(xa, xb[0xd], 0x11);
+      xc[0xe] = _mm_clmulepi64_si128(xa, xb[0xe], 0x11);
+      xc[0xf] = _mm_clmulepi64_si128(xa, xb[0xf], 0x11);
+
+      xb[0x0] = _mm_xor_si128(xb[0x0], xc[0x0]);
+      xb[0x1] = _mm_xor_si128(xb[0x1], xc[0x1]);
+      xb[0x2] = _mm_xor_si128(xb[0x2], xc[0x2]);
+      xb[0x3] = _mm_xor_si128(xb[0x3], xc[0x3]);
+      xb[0x4] = _mm_xor_si128(xb[0x4], xc[0x4]);
+      xb[0x5] = _mm_xor_si128(xb[0x5], xc[0x5]);
+      xb[0x6] = _mm_xor_si128(xb[0x6], xc[0x6]);
+      xb[0x7] = _mm_xor_si128(xb[0x7], xc[0x7]);
+      xb[0x8] = _mm_xor_si128(xb[0x8], xc[0x8]);
+      xb[0x9] = _mm_xor_si128(xb[0x9], xc[0x9]);
+      xb[0xa] = _mm_xor_si128(xb[0xa], xc[0xa]);
+      xb[0xb] = _mm_xor_si128(xb[0xb], xc[0xb]);
+      xb[0xc] = _mm_xor_si128(xb[0xc], xc[0xc]);
+      xb[0xd] = _mm_xor_si128(xb[0xd], xc[0xd]);
+      xb[0xe] = _mm_xor_si128(xb[0xe], xc[0xe]);
+      xb[0xf] = _mm_xor_si128(xb[0xf], xc[0xf]);
+
+      xc[0x0] = _mm_clmulepi64_si128(xa, xc[0x0], 0x11);
+      xc[0x1] = _mm_clmulepi64_si128(xa, xc[0x1], 0x11);
+      xc[0x2] = _mm_clmulepi64_si128(xa, xc[0x2], 0x11);
+      xc[0x3] = _mm_clmulepi64_si128(xa, xc[0x3], 0x11);
+      xc[0x4] = _mm_clmulepi64_si128(xa, xc[0x4], 0x11);
+      xc[0x5] = _mm_clmulepi64_si128(xa, xc[0x5], 0x11);
+      xc[0x6] = _mm_clmulepi64_si128(xa, xc[0x6], 0x11);
+      xc[0x7] = _mm_clmulepi64_si128(xa, xc[0x7], 0x11);
+      xc[0x8] = _mm_clmulepi64_si128(xa, xc[0x8], 0x11);
+      xc[0x9] = _mm_clmulepi64_si128(xa, xc[0x9], 0x11);
+      xc[0xa] = _mm_clmulepi64_si128(xa, xc[0xa], 0x11);
+      xc[0xb] = _mm_clmulepi64_si128(xa, xc[0xb], 0x11);
+      xc[0xc] = _mm_clmulepi64_si128(xa, xc[0xc], 0x11);
+      xc[0xd] = _mm_clmulepi64_si128(xa, xc[0xd], 0x11);
+      xc[0xe] = _mm_clmulepi64_si128(xa, xc[0xe], 0x11);
+      xc[0xf] = _mm_clmulepi64_si128(xa, xc[0xf], 0x11);
+
+      xb[0x0] = _mm_xor_si128(xb[0x0], xc[0x0]);
+      xb[0x1] = _mm_xor_si128(xb[0x1], xc[0x1]);
+      xb[0x2] = _mm_xor_si128(xb[0x2], xc[0x2]);
+      xb[0x3] = _mm_xor_si128(xb[0x3], xc[0x3]);
+      xb[0x4] = _mm_xor_si128(xb[0x4], xc[0x4]);
+      xb[0x5] = _mm_xor_si128(xb[0x5], xc[0x5]);
+      xb[0x6] = _mm_xor_si128(xb[0x6], xc[0x6]);
+      xb[0x7] = _mm_xor_si128(xb[0x7], xc[0x7]);
+      xb[0x8] = _mm_xor_si128(xb[0x8], xc[0x8]);
+      xb[0x9] = _mm_xor_si128(xb[0x9], xc[0x9]);
+      xb[0xa] = _mm_xor_si128(xb[0xa], xc[0xa]);
+      xb[0xb] = _mm_xor_si128(xb[0xb], xc[0xb]);
+      xb[0xc] = _mm_xor_si128(xb[0xc], xc[0xc]);
+      xb[0xd] = _mm_xor_si128(xb[0xd], xc[0xd]);
+      xb[0xe] = _mm_xor_si128(xb[0xe], xc[0xe]);
+      xb[0xf] = _mm_xor_si128(xb[0xf], xc[0xf]);
+
+      // code below equivalent to p[i]  ^= low half of xb[i], i = 0 ... f
+      //<
+      xb[0x0] =_mm_unpacklo_epi64(xb[0x0], xb[0x1]);
+      xb[0x2] =_mm_unpacklo_epi64(xb[0x2], xb[0x3]);
+      xb[0x4] =_mm_unpacklo_epi64(xb[0x4], xb[0x5]);
+      xb[0x6] =_mm_unpacklo_epi64(xb[0x6], xb[0x7]);
+      xb[0x8] =_mm_unpacklo_epi64(xb[0x8], xb[0x9]);
+      xb[0xa] =_mm_unpacklo_epi64(xb[0xa], xb[0xb]);
+      xb[0xc] =_mm_unpacklo_epi64(xb[0xc], xb[0xd]);
+      xb[0xe] =_mm_unpacklo_epi64(xb[0xe], xb[0xf]);
+
+
+      xb[0x1] = _mm_load_si128((__m128i*)(p)+0x0);
+      xb[0x3] = _mm_load_si128((__m128i*)(p)+0x1);
+      xb[0x5] = _mm_load_si128((__m128i*)(p)+0x2);
+      xb[0x7] = _mm_load_si128((__m128i*)(p)+0x3);
+      xb[0x9] = _mm_load_si128((__m128i*)(p)+0x4);
+      xb[0xb] = _mm_load_si128((__m128i*)(p)+0x5);
+      xb[0xd] = _mm_load_si128((__m128i*)(p)+0x6);
+      xb[0xf] = _mm_load_si128((__m128i*)(p)+0x7);
+
+      xb[0x0] = _mm_xor_si128(xb[0x0], xb[0x1]);
+      xb[0x2] = _mm_xor_si128(xb[0x2], xb[0x3]);
+      xb[0x4] = _mm_xor_si128(xb[0x4], xb[0x5]);
+      xb[0x6] = _mm_xor_si128(xb[0x6], xb[0x7]);
+      xb[0x8] = _mm_xor_si128(xb[0x8], xb[0x9]);
+      xb[0xa] = _mm_xor_si128(xb[0xa], xb[0xb]);
+      xb[0xc] = _mm_xor_si128(xb[0xc], xb[0xd]);
+      xb[0xe] = _mm_xor_si128(xb[0xe], xb[0xf]);
+
+      _mm_store_si128((__m128i*)(p),   xb[0x0]); //16-byte aligned store
+      _mm_store_si128((__m128i*)(p)+1, xb[0x2]);
+      _mm_store_si128((__m128i*)(p)+2, xb[0x4]);
+      _mm_store_si128((__m128i*)(p)+3, xb[0x6]);
+      _mm_store_si128((__m128i*)(p)+4, xb[0x8]);
+      _mm_store_si128((__m128i*)(p)+5, xb[0xa]);
+      _mm_store_si128((__m128i*)(p)+6, xb[0xc]);
+      _mm_store_si128((__m128i*)(p)+7, xb[0xe]);
+      //>
+
+      if constexpr(!reverse)
+      {
+        // q[i] ^= p[i], i = 0 ... 7
+        xb[1] = _mm_load_si128((__m128i*)(q));
+        xb[3] = _mm_load_si128((__m128i*)(q)+1);
+        xb[5] = _mm_load_si128((__m128i*)(q)+2);
+        xb[7] = _mm_load_si128((__m128i*)(q)+3);
+        xb[9] = _mm_load_si128((__m128i*)(q)+4);
+        xb[11] = _mm_load_si128((__m128i*)(q)+5);
+        xb[13] = _mm_load_si128((__m128i*)(q)+6);
+        xb[15] = _mm_load_si128((__m128i*)(q)+7);
+
+        xb[0] = _mm_xor_si128(xb[0], xb[1]);
+        xb[2] = _mm_xor_si128(xb[2], xb[3]);
+        xb[4] = _mm_xor_si128(xb[4], xb[5]);
+        xb[6] = _mm_xor_si128(xb[6], xb[7]);
+        xb[8] = _mm_xor_si128(xb[8], xb[9]);
+        xb[10] = _mm_xor_si128(xb[10], xb[11]);
+        xb[12] = _mm_xor_si128(xb[12], xb[13]);
+        xb[14] = _mm_xor_si128(xb[14], xb[15]);
+
+        _mm_store_si128((__m128i*)(q),   xb[0]);
+        _mm_store_si128((__m128i*)(q)+1, xb[2]);
+        _mm_store_si128((__m128i*)(q)+2, xb[4]);
+        _mm_store_si128((__m128i*)(q)+3, xb[6]);
+        _mm_store_si128((__m128i*)(q)+4, xb[8]);
+        _mm_store_si128((__m128i*)(q)+5, xb[10]);
+        _mm_store_si128((__m128i*)(q)+6, xb[12]);
+        _mm_store_si128((__m128i*)(q)+7, xb[14]);
+      }
+      p+=0x10;
+      q+=0x10;
+    }
+  }
+
+#endif
 }
 
 /**
