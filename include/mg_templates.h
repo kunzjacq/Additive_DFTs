@@ -167,7 +167,7 @@ static inline void eval_degree1(const uint64_t val,  uint64_t* restr pu)
       if constexpr(!reverse)
       {
         // q[i] ^= p[i], i = 0 ... 3
-        xb[1] = _mm_load_si128((__m128i*)(q)  );
+        xb[1] = _mm_load_si128((__m128i*)(q));
         xb[3] = _mm_load_si128((__m128i*)(q)+1);
         xb[0] = _mm_xor_si128(xb[0], xb[1]);
         xb[2] = _mm_xor_si128(xb[2], xb[3]);

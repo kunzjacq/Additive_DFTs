@@ -199,7 +199,8 @@ int main(int UNUSED(argc), char** UNUSED(argv))
   // the naive product implementation and the DFT implentation differ from gf2x.
   unsigned int log_sz[] = {10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37};
   //unsigned int log_sz[] = {8,9,10,11,12,13,14,15,16,17,18};
-  bool cpu_has_required_flags = detect_cpu_features();
+  cpu_features f;
+  bool cpu_has_required_flags = f.has_popcnt && f.has_bmi1 && f.has_avx2 && f.has_pclmul;
   if(!cpu_has_required_flags)
   {
     cout << "cpu flags required not present (AVX2, PCMULQDQ, POPCNT, BMI1). Exiting" << endl;

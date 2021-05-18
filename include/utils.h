@@ -5,7 +5,30 @@
 #include <iostream>
 #include <iomanip>
 
-bool detect_cpu_features();
+class cpu_features{
+public:
+  bool has_mmx;
+  bool has_sse;
+  bool has_rdrand;
+  bool has_avx;
+  bool has_sse2;
+  bool has_aesni;
+  bool has_popcnt;
+  bool has_pclmul;
+  bool has_bmi1;
+  bool has_bmi2;
+  bool has_gfni;
+  bool has_vaes;
+  bool has_vpclmul;
+  bool has_rdseed;
+  bool has_avx2;
+  bool has_abm;
+  bool has_avx512f;
+  bool has_avx512vl;
+
+  cpu_features();
+  void print();
+};
 
 /**
  * @brief extract

@@ -71,8 +71,8 @@ static bool decompose_taylor_test(
 
 int main(int UNUSED(argc), char** UNUSED(argv))
 {
-  bool cpu_has_SSE2_and_PCMUL = detect_cpu_features();
-  if(!cpu_has_SSE2_and_PCMUL)
+  cpu_features f;
+  if(!(f.has_sse2 && f.has_pclmul))
   {
     cout << "SSE2 and PCMULQDQ are required. Exiting" << endl;
     exit(2);
