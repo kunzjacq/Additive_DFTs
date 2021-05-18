@@ -1,9 +1,10 @@
-#include "mg.h"
-
 #include <memory>    // for unique_ptr
 #include <algorithm> // for min, max
 
 #include <immintrin.h>
+#include "mg.h"
+
+#include "mg_templates.h"
 
 using namespace std;
 

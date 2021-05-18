@@ -1,16 +1,9 @@
 #pragma once
 
-#include <cstdint>
+#include "base.h"
+
 #include <iostream>
 #include <iomanip>
-
-#if defined(__cplusplus)
-#define UNUSED(x)
-#elif defined(__GNUC__)
-#define UNUSED(x)       x __attribute__((unused))
-#else
-#define UNUSED(x)       x
-#endif
 
 bool detect_cpu_features();
 
