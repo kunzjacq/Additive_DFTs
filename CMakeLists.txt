@@ -72,6 +72,13 @@ configure_file("defs.h.in" "defs.h")
 
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
+add_executable(product_test
+ "product_test.cpp"
+ "utils.cpp"
+ "libfft/mg.cpp"
+ )
+
+if ((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") OR (CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
 add_executable(cantor_basis_test
   "cantor_test.cpp"
   "libcantor/cantor_basis_bare.cpp"
@@ -87,11 +94,10 @@ add_executable(fft_test
  "libcantor/cantor_basis_full.cpp"
  "libcantor/helpers.cpp")
 
-add_executable(product_test
- "product_test.cpp"
- "utils.cpp"
- "libfft/mg.cpp"
- )
+#with MSVC, product_test does not support gf2x reference computations
+target_link_libraries(product_test gf2x)
+endif()
+
 
 
 if(Boost_FOUND)
@@ -102,4 +108,3 @@ else()
   message("Boost large integers not available")
 endif()
 
-target_link_libraries(product_test gf2x)

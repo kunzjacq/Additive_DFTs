@@ -11,8 +11,16 @@
 
 using namespace std;
 
-// test results against gf2x
+// test results against gf2x (unavailable with MSVC)
+#ifdef __GNUC__
 constexpr bool do_gf2x = true;
+#else
+#ifdef _MSC_VER
+constexpr bool do_gf2x = false;
+#else
+#error "unsupported compiler"
+#endif
+#endif
 // choose between in-place or out-of-place product variants of Mateer-Gao product
 constexpr bool test_in_place_variant = true;
 constexpr bool test_naive_product = false; // test or benchmark a naive implementation of polynomial
