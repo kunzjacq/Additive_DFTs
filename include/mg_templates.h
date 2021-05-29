@@ -57,8 +57,8 @@
  * @param p
  * a pointer to the array containing the interleaved polynomials.
  */
-template<bool reverse, int logstride>
-static inline void eval_degree1(const uint64_t val,  uint64_t* restr pu)
+template<bool reverse>
+static inline void eval_degree1(int logstride, const uint64_t val,  uint64_t* restr pu)
 {
   uint64_t* restr p = (uint64_t*) std::assume_aligned<16>(pu);
 
@@ -67,7 +67,7 @@ static inline void eval_degree1(const uint64_t val,  uint64_t* restr pu)
   // it is the minimal polynomial of the multiplicative generator
 
   __m128i xa = _mm_set_epi64x(minpoly, val);
-  if constexpr(logstride == 0)
+  if (logstride == 0)
   {
     __m128i xb, xc;
     if constexpr(reverse) p[1] ^= p[0];
@@ -81,7 +81,7 @@ static inline void eval_degree1(const uint64_t val,  uint64_t* restr pu)
     if constexpr(!reverse) p[1] ^= p[0];
 
   }
-  else if constexpr(logstride == 1)
+  else if (logstride == 1)
   {
     __m128i xb1, xb2, xc1, xc2;
 
@@ -111,7 +111,7 @@ static inline void eval_degree1(const uint64_t val,  uint64_t* restr pu)
   }
   else //if constexpr(logstride == 2) // best larger stride on ryzen 2 processors
   {
-    constexpr uint64_t stride = 1uLL << logstride;
+    uint64_t stride = 1uLL << logstride;
     uint64_t* restr q = std::assume_aligned<16>(p + stride);
     for(uint64_t i = 0; i < stride; i += 4)
     {
@@ -520,8 +520,9 @@ static inline void eval_degree1(const uint64_t val,  uint64_t* restr pu)
  * @param logsize
  * @param p
  */
-template<unsigned int logstride, unsigned int t, class T>
+template<unsigned int t, class T>
 inline void mg_decompose_taylor_recursive(
+    unsigned int logstride,
     unsigned int logsize,
     T* restr pu)
 {
@@ -540,8 +541,8 @@ inline void mg_decompose_taylor_recursive(
 
   if(logsize > t + 1)
   {
-    mg_decompose_taylor_recursive<logstride, t, T>(logsize - 1, p);
-    mg_decompose_taylor_recursive<logstride, t, T>(logsize - 1, p + m_s);
+    mg_decompose_taylor_recursive<t, T>(logstride, logsize - 1, p);
+    mg_decompose_taylor_recursive<t, T>(logstride, logsize - 1, p + m_s);
   }
 }
 
