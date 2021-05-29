@@ -35,3 +35,6 @@
 *.txt
 CMakeLists.txt.user
 CMakeLists.txt.user.*
+
+#visual studio
+.vs/
