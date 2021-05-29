@@ -6,6 +6,7 @@
 #include "timer.h"
 #include "mg.h"
 #include "utils.h"
+#include "sha256.h"
 
 #include "gf2x.h"
 
@@ -28,6 +29,8 @@ constexpr bool test_naive_product = false; // test or benchmark a naive implemen
 
 constexpr unsigned int gf2x_max_logsize = 35;
 constexpr unsigned int naive_max_logsize = 18;
+
+constexpr bool compare_with_sha2 = true;
 
 
 // benchmark Mateer-Gao product
@@ -60,14 +63,20 @@ static bool mateer_gao_product_test(
   mt19937_64 engine;
   uniform_int_distribution<uint64_t> distr;
   auto draw = [&distr, &engine]() {return distr(engine);};
-  constexpr uint32_t extract_size = 6;
+  constexpr uint32_t extract_size = compare_with_sha2 ? 4 : 6;
   uint64_t e1[extract_size];
   uint64_t e2[extract_size];
+  for(int i = 0; i < extract_size; i++)
+  {
+    e1[i] = 0;
+    e2[i] = 0;
+  }
   // compute products of polynomials over F2 with Mateer-Gao DFT
   // optionally check the result with gf2x
   for(unsigned int j = 0; j < num_sz; j++)
   {
     const uint64_t lsz = log_sz[j];
+    // result bit size
     const uint64_t sz = 1uLL << lsz;
     const bool do_gf2x_local = do_gf2x && lsz <= gf2x_max_logsize;
     const bool do_naive_local = do_gf2x && lsz <= naive_max_logsize;
@@ -105,7 +114,6 @@ static bool mateer_gao_product_test(
       p1[i] = draw();
       p2[i] = draw();
     }
-    tm.set_start();
     uint32_t e_sz = 0;
     if constexpr(do_gf2x)
     {
@@ -115,11 +123,26 @@ static bool mateer_gao_product_test(
         cout << " Performing product with gf2x" << endl;
         do
         {
+          tm.set_start();
           unsigned long ulsz = (unsigned long) (sz / (16*sizeof(unsigned long)));
           gf2x_mul((unsigned long *) p3,(unsigned long *) p1, ulsz, (unsigned long *) p2, ulsz);
-          if(run_count == 0) e_sz =  extract<uint64_t>(p3, sz/64, e1, extract_size);
+          t1 += tm.measure();
+          if(run_count == 0)
+          {
+            if constexpr(compare_with_sha2)
+            {
+              SHA256_CTX c;
+              sha256_init(&c);
+              sha256_update(&c, (BYTE*) p3, sz/8);
+              sha256_final(&c, (BYTE*) e1);
+              e_sz = 4;
+            }
+            else
+            {
+              e_sz =  extract<uint64_t>(p3, sz/64, e1, extract_size);
+            }
+          }
           run_count++;
-          t1 = tm.measure();
         }
         while(benchmark && (t1 <= min_time) && (run_count < max_runs));
         t1 /= (double) run_count;
@@ -150,10 +173,10 @@ static bool mateer_gao_product_test(
     }
 
     cout << " Performing product with MG DFT" << endl;
-    tm.set_start();
     run_count = 0;
     do
     {
+      tm.set_start();
       if constexpr(compute_in_place)
       {
         mg_binary_polynomial_multiply_in_place(p1, p2, sz/2 - 1, sz/2 - 1);
@@ -169,11 +192,23 @@ static bool mateer_gao_product_test(
           mg_binary_polynomial_multiply(p1, p2, p3, sz/2 - 1, sz/2 - 1);
         }
       }
+      t2 += tm.measure();
       uint64_t* result = compute_in_place ? p1 : p3;
-      if(compare && (run_count == 0)) extract<uint64_t>(result, sz/64, e2, extract_size);
+      if(compare && (run_count == 0))
+      {
+        if constexpr(compare_with_sha2)
+        {
+          SHA256_CTX c;
+          sha256_init(&c);
+          sha256_update(&c, (BYTE*) result, sz/8);
+          sha256_final(&c, (BYTE*) e2);
+        }
+        else
+        {
+          extract<uint64_t>(result, sz/64, e2, extract_size);
+        }
+      }
       run_count++;
-      t2 = tm.measure();
-
     }
     while(benchmark && (t2 <= min_time) && (run_count < max_runs));
     t2 /= (double) run_count;

@@ -76,6 +76,7 @@ add_executable(product_test
  "product_test.cpp"
  "utils.cpp"
  "libfft/mg.cpp"
+ "sha256.c"
  )
 
 if ((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") OR (CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
