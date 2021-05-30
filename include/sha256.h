@@ -1,3 +1,5 @@
+// from https://github.com/B-Con/crypto-algorithms, added extren "C" declaration to use in C++ code
+
 /*********************************************************************
 * Filename:   sha256.h
 * Author:     Brad Conte (brad AT bradconte.com)
