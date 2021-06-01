@@ -72,16 +72,17 @@ void naive_product(uint64_t* p1u, uint64_t n1, uint64_t* p2u, uint64_t n2, uint6
       __m128i y = _mm_load_si128(p2 + j);
       __m128i z1 = _mm_clmulepi64_si128(x, y, 0x00);
       __m128i z2 = _mm_clmulepi64_si128(x, y, 0x01);
-      z1 ^= next;
+      z1 = _mm_xor_si128(z1, next);
       __m128i z4 = _mm_clmulepi64_si128(x, y, 0x11);
-      z2 ^= _mm_clmulepi64_si128(x, y, 0x10);
+      __m128i z6 = _mm_clmulepi64_si128(x, y, 0x10);
+      z2 = _mm_xor_si128(z2, z6);
       __m128i z3 = _mm_set_epi64x(_mm_extract_epi64(z2, 0), 0x0);
       __m128i z5 = _mm_set_epi64x(0x0, _mm_extract_epi64(z2, 1));
-      z1 ^= z3;
-      next = z4 ^ z5;
-      q[i + j] ^= z1;
+      z1 = _mm_xor_si128(z1, z3);
+      next = _mm_xor_si128(z4, z5);
+      q[i + j] = _mm_xor_si128(q[i + j], z1);
     }
-    q[i + n2] ^= next;
+    q[i + n2] = _mm_xor_si128(q[i + n2], next);
   }
 }
 
