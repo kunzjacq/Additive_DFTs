@@ -4,32 +4,28 @@ project(additive_dfts)
 
 include(TestBigEndian)
 
-include_directories("${PROJECT_SOURCE_DIR}/include")
-
 message("CMAKE_SYSTEM_NAME: ${CMAKE_SYSTEM_NAME}")
-#message("MINGW: ${MINGW}")
 set(CMAKE_VERBOSE_MAKEFILE on)
 
 option(LTO "Link-time optimization" ON)
 option(USE_BOOST "Use Boost for large integers" OFF)
-
-if(MINGW)
-  message("Windows/MinGW detected")
-  link_directories("${PROJECT_SOURCE_DIR}/lib_mingw")
-else()
-  link_directories("${PROJECT_SOURCE_DIR}/lib")
-endif()
-
-if("$ENV{CUSTOM_LIBS}" STREQUAL "")
-else()
-  link_directories("$ENV{CUSTOM_LIBS}/lib")
-endif()
 
 if(LTO)
   message("Turning on link-time optimization")
   set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
   # per-target setting:
   #  set_property(TARGET <target name> PROPERTY INTERPROCEDURAL_OPTIMIZATION True)
+endif()
+
+set(LOCAL_LIB_DIR "${PROJECT_SOURCE_DIR}/lib")
+
+if(IS_DIRECTORY ${LOCAL_LIB_DIR})
+  list(APPEND LIB_DIRS "${LOCAL_LIB_DIR}")
+endif()
+
+if("$ENV{CUSTOM_LIBS}" STREQUAL "")
+else()
+  list(APPEND LIB_DIRS "$ENV{CUSTOM_LIBS}/lib")
 endif()
 
 set(CMAKE_CXX_STANDARD 20) #for assume_aligned
@@ -45,22 +41,17 @@ if(BE EQUAL 1)
 endif()
 
 if ((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") OR (CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
-  set(WARN_FLAGS "-Wall -Wextra")
-  # architecture flags strictly needed to compile the code: -mavx2 -mpclmul -mbmi
-  set(CMAKE_C_FLAGS   "-march=native -mtune=native ${CMAKE_C_FLAGS}   ${WARN_FLAGS}")
+  add_compile_options(-Wall -Wextra)
+  ## architecture flags strictly needed to compile the code: -mavx2 -mpclmul -mbmi
+  add_compile_options(-march=native -mtune=native)
   if(MINGW)
-      set(CMAKE_C_FLAGS "-D__USE_MINGW_ANSI_STDIO=1 ${CMAKE_C_FLAGS}")
+      add_compile_definitions(__USE_MINGW_ANSI_STDIO=1)
   endif()
-  set(CMAKE_CXX_FLAGS "-march=native -mtune=native ${CMAKE_CXX_FLAGS} ${WARN_FLAGS}")
-  # Additional optimization or debug options
-  #set(OPT_FLAGS "-ftree-vectorize -ftree-vectorizer-verbose=4 -fno-rtti -Wl,--as-needed")
-  #set(DEBUG_FLAGS "-D_DEBUG")
-  #set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} ${OPT_FLAGS}")
-  #set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${OPT_FLAGS}")
-  #set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} ${DEBUG_FLAGS}")
-  #set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${DEBUG_FLAGS}")
+  ## Additional optimization or debug options
+  #add_compile_options("$<$<CONFIG:RELEASE>:-ftree-vectorize;-ftree-vectorizer-verbose=4;-fno-rtti;-Wl,--as-needed>")
+  #add_compile_definitions("$<$<CONFIG:DEBUG>:_DEBUG>")
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-  set(CMAKE_CXX_FLAGS "/arch:AVX2 /favor:AMD64 ${CMAKE_CXX_FLAGS}")
+  add_compile_options(/arch:AVX2 /favor:AMD64)
 endif()
 
 if(USE_BOOST)
@@ -70,35 +61,38 @@ endif()
 
 configure_file("defs.h.in" "defs.h")
 
-include_directories(${CMAKE_CURRENT_BINARY_DIR})
-
 add_executable(product_test
  "product_test.cpp"
  "utils.cpp"
  "libfft/mg.cpp"
- )
+)
+
+target_include_directories(product_test PRIVATE ${CMAKE_CURRENT_BINARY_DIR} "${PROJECT_SOURCE_DIR}/include") 
+# CMAKE_CURRENT_BINARY_DIR added for defs.h
 
 if ((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") OR (CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
-add_executable(cantor_basis_test
-  "cantor_test.cpp"
-  "libcantor/cantor_basis_bare.cpp"
-  "libcantor/cantor_basis_full.cpp"
-  "libcantor/helpers.cpp")
+  target_link_libraries(product_test gf2x)
+  target_link_directories(product_test PRIVATE "${LIB_DIRS}")
 
-add_executable(fft_test
- "fft_test.cpp"
- "utils.cpp"
- "libfft/additive_fft.cpp"
- "libfft/mg.cpp"
- "libcantor/cantor_basis_bare.cpp"
- "libcantor/cantor_basis_full.cpp"
- "libcantor/helpers.cpp")
+  add_executable(cantor_basis_test
+    "cantor_test.cpp"
+    "libcantor/cantor_basis_bare.cpp"
+    "libcantor/cantor_basis_full.cpp"
+    "libcantor/helpers.cpp"
+  )
+  target_include_directories(cantor_basis_test PRIVATE ${CMAKE_CURRENT_BINARY_DIR} "${PROJECT_SOURCE_DIR}/include")
 
-#with MSVC, product_test does not support gf2x reference computations
-target_link_libraries(product_test gf2x)
+  add_executable(fft_test
+   "fft_test.cpp"
+   "utils.cpp"
+   "libfft/additive_fft.cpp"
+   "libfft/mg.cpp"
+   "libcantor/cantor_basis_bare.cpp"
+   "libcantor/cantor_basis_full.cpp"
+   "libcantor/helpers.cpp"
+  )
+  target_include_directories(fft_test PRIVATE ${CMAKE_CURRENT_BINARY_DIR} "${PROJECT_SOURCE_DIR}/include")
 endif()
-
-
 
 if(Boost_FOUND)
   message("Using Boost for large integers")

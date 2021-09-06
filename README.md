@@ -75,21 +75,27 @@ The polynomial product code uses a fast implementation of multiplication in GF(2
 
 Cantor bases are available for field sizes above 2<sup>64</sup> thanks to the optional use of `Boost::multiprecision` which implements large integers. With this library, the cantor basis test program tests the construction in finite fields of size up to 2<sup>2048</sup>. In theory, truncated Wang-Zhu-Cantor DFT could work in such large fields, however it is not tested and does not work due to overflows in the handling of loop indexes, which are all of type `uint64_t`. There is probably little interest to use these field sizes for truncated DFTs; full DFTs are of course totally unrealistic in these cases.
 
-## Build instructions
-Test programs can be built for 64-bit Linux or Windows. For windows, MinGW gcc usage is assumed, for instance with the version that comes with MSYS2. Cmake is needed. The usual cmake build process applies (in a build directory separate from the source dir $SOURCE_DIR):
-
-    cmake $SOURCE_DIR
-    make
-
-To make an optimized build, add `-DCMAKE_BUILD_TYPE=Release` to the cmake invocation.
-
-There are three targets:
-  * `product_test` which benches Mateer-Gao polynomial products and checks them against gf2x;
-  * `fft_test` which enables to test and benchmark the DFT algorithms discussed above. If `Boost::multiprecision` (https://www.boost.org/doc/libs/1_73_0/libs/multiprecision/doc/html/index.html) is detected, Cantor bases and DFT objects can be instantiated for all sizes for which large integers are available from this library. DFT algorithms are not tested (see above) and currently cannot work correctly in these fields;
+## Targets
+There are three targets which can be built for 64-bit Linux or Windows:
+  * `product_test` which benches Mateer-Gao polynomial products (using the finite field GF(2<sup>64</sup>) for DFTs) and checks them against gf2x;
+  * `fft_test` which enables to test and benchmark the DFT algorithms discussed above. The binary field and the size of a buffer used in tests determine which tests can be run; these parameters can be adjusted at compile-time at the top of `fft_test.cpp`. If `Boost::multiprecision` (https://www.boost.org/doc/libs/1_73_0/libs/multiprecision/doc/html/index.html) is detected, Cantor bases and DFT objects can be instantiated for all sizes for which large integers are available from this library. DFT algorithms are not tested (see above) and currently most likely do not work correctly in these large fields. 
   * `cantor_basis_test` which performs various consistency checks on cantor basis construction.
 
-For target `fft_test`, the binary field and the size of a buffer used in tests determine which tests can be run. These parameters can be adjusted at compile-time at the top of `fft_test.cpp`.
+For target `fft_test`,
 
-Target `product_test` requires a compiled version of gf2x for the target platform to be placed in `lib/` (for Linux) or `lib_mingw/` (for Windows). The finite field used is GF(2<sup>64</sup>).
+## Build instructions
+Under Linux, gcc or clang are able to build all targets. Under windows, MinGW gcc (for instance from MSYS2) can be used, whereas MSVC will only build a limited version of `product_test` that does not use `gf2x`. 
+
+The build process uses Cmake. For instance, an optimized build with gcc using a single-configuration generator such as make, in build directory $BUILD_DIR and source dir $SOURCE_DIR, is achieved with:
+
+    cmake -S $SOURCE_DIR -B $BUILD_DIR -D CMAKE_BUILD_TYPE=Release
+    cmake --build $BUILD_DIR --parallel
+
+Multi-configuration generators need different options; see https://stackoverflow.com/questions/7724569/debug-vs-release-in-cmake/64719718#64719718. 
+
+Target `product_test` requires a compiled version of gf2x for the target platform to be placed in a subdirectory of the source dir named `lib/`. Alternatively, if an environment variable `CUSTOM_LIBS` is defined and contains a valid directory path, it will be used to look for gf2x.
+
+
+
 
 
