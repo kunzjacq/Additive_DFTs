@@ -4,11 +4,17 @@
 #include <immintrin.h>
 #include "mg.h"
 
+
+constexpr int inline_bound = 8;
+
 #include "mg_templates.h"
 
 using namespace std;
 
-#define GRAY_CODE
+//#define GRAY_CODE
+
+//#define NEW_DECOMPOSE_TAYLOR
+
 
 /** beta_over_mult_cumulative[i] = sum_j = 0 ... i - 1 beta_i
  * in multplicative representation, i.e. in GF(2**64) as described in
@@ -55,64 +61,6 @@ static constexpr uint64_t beta_over_mult[] = {
 };
 #endif
 
-constexpr int comp_t(int n){
-  if (n<=2) return 1;
-  else if (n<=4) return 2;
-  else if (n<=8) return 4;
-  else if (n<=16) return 8;
-  else if (n<=32) return 16;
-  else return 32;
-}
-
-#if 0
-template <int s, int logstride, template<int, int, int> class T>
-void constify(int n, uint64_t* poly, const uint64_t* offsets_mult, bool first_taylor_done)
-{
-  if(n==0) T<s, logstride, 0>(poly, offsets_mult, first_taylor_done);
-  else if(n==1) T<s, logstride, 1>(poly, offsets_mult, first_taylor_done);
-  else if(n==2) T<s, logstride, 2>(poly, offsets_mult, first_taylor_done);
-  else if(n==3) T<s, logstride, 3>(poly, offsets_mult, first_taylor_done);
-  else if(n==4) T<s, logstride, 4>(poly, offsets_mult, first_taylor_done);
-  else if(n==5) T<s, logstride, 5>(poly, offsets_mult, first_taylor_done);
-  else if(n==6) T<s, logstride, 6>(poly, offsets_mult, first_taylor_done);
-  else if(n==7) T<s, logstride, 7>(poly, offsets_mult, first_taylor_done);
-  else if(n==8) T<s, logstride, 8>(poly, offsets_mult, first_taylor_done);
-  else if(n==9) T<s, logstride, 9>(poly, offsets_mult, first_taylor_done);
-  else if(n==10) T<s, logstride, 10>(poly, offsets_mult, first_taylor_done);
-  else if(n==11) T<s, logstride, 11>(poly, offsets_mult, first_taylor_done);
-  else if(n==12) T<s, logstride, 12>(poly, offsets_mult, first_taylor_done);
-  else if(n==13) T<s, logstride, 13>(poly, offsets_mult, first_taylor_done);
-  else if(n==14) T<s, logstride, 14>(poly, offsets_mult, first_taylor_done);
-  else if(n==15) T<s, logstride, 15>(poly, offsets_mult, first_taylor_done);
-  else if(n==16) T<s, logstride, 16>(poly, offsets_mult, first_taylor_done);
-  else if(n==17) T<s, logstride, 17>(poly, offsets_mult, first_taylor_done);
-  else if(n==18) T<s, logstride, 18>(poly, offsets_mult, first_taylor_done);
-  else if(n==19) T<s, logstride, 19>(poly, offsets_mult, first_taylor_done);
-  else if(n==20) T<s, logstride, 20>(poly, offsets_mult, first_taylor_done);
-  else if(n==21) T<s, logstride, 21>(poly, offsets_mult, first_taylor_done);
-  else if(n==22) T<s, logstride, 22>(poly, offsets_mult, first_taylor_done);
-  else if(n==23) T<s, logstride, 23>(poly, offsets_mult, first_taylor_done);
-  else if(n==24) T<s, logstride, 24>(poly, offsets_mult, first_taylor_done);
-  else if(n==25) T<s, logstride, 25>(poly, offsets_mult, first_taylor_done);
-  else if(n==26) T<s, logstride, 26>(poly, offsets_mult, first_taylor_done);
-  else if(n==27) T<s, logstride, 27>(poly, offsets_mult, first_taylor_done);
-  else if(n==28) T<s, logstride, 28>(poly, offsets_mult, first_taylor_done);
-  else if(n==29) T<s, logstride, 29>(poly, offsets_mult, first_taylor_done);
-  else if(n==30) T<s, logstride, 30>(poly, offsets_mult, first_taylor_done);
-  else if(n==31) T<s, logstride, 31>(poly, offsets_mult, first_taylor_done);
-  else if(n==32) T<s, logstride, 32>(poly, offsets_mult, first_taylor_done);
-  else if(n==33) T<s, logstride, 33>(poly, offsets_mult, first_taylor_done);
-  else if(n==34) T<s, logstride, 34>(poly, offsets_mult, first_taylor_done);
-  else if(n==35) T<s, logstride, 35>(poly, offsets_mult, first_taylor_done);
-  else if(n==36) T<s, logstride, 36>(poly, offsets_mult, first_taylor_done);
-  else if(n==37) T<s, logstride, 37>(poly, offsets_mult, first_taylor_done);
-  else if(n==38) T<s, logstride, 38>(poly, offsets_mult, first_taylor_done);
-  else if(n==39) T<s, logstride, 39>(poly, offsets_mult, first_taylor_done);
-  else if(n==40) T<s, logstride, 40>(poly, offsets_mult, first_taylor_done);
-}
-#endif
-
-
 void naive_product(uint64_t* p1u, uint64_t n1, uint64_t* p2u, uint64_t n2, uint64_t* qu)
 {
   __m128i* restr p1 = (__m128i*) std::assume_aligned<16>(p1u);
@@ -130,16 +78,17 @@ void naive_product(uint64_t* p1u, uint64_t n1, uint64_t* p2u, uint64_t n2, uint6
       __m128i y = _mm_load_si128(p2 + j);
       __m128i z1 = _mm_clmulepi64_si128(x, y, 0x00);
       __m128i z2 = _mm_clmulepi64_si128(x, y, 0x01);
-      z1 ^= next;
+      //z1 ^= next;
+      z1 = _mm_xor_si128(z1, next);
       __m128i z4 = _mm_clmulepi64_si128(x, y, 0x11);
-      z2 ^= _mm_clmulepi64_si128(x, y, 0x10);
+      z2 = _mm_xor_si128(z2, _mm_clmulepi64_si128(x, y, 0x10));
       __m128i z3 = _mm_set_epi64x(_mm_extract_epi64(z2, 0), 0x0);
       __m128i z5 = _mm_set_epi64x(0x0, _mm_extract_epi64(z2, 1));
-      z1 ^= z3;
-      next = z4 ^ z5;
-      q[i + j] ^= z1;
+      z1 = _mm_xor_si128(z1, z3);
+      next = _mm_xor_si128(z4, z5);
+      q[i + j] = _mm_xor_si128(q[i + j], z1);
     }
-    q[i + n2] ^= next;
+    q[i + n2] = _mm_xor_si128(q[i + n2], next);
   }
 }
 
@@ -289,6 +238,63 @@ static void product_batch(uint64_t* restr a_ptru, uint64_t* restr b_ptru, unsign
   }
 }
 
+template <unsigned int logsize>
+extern inline force_inline void mg_core_inlined(
+    int logstride,
+    uint64_t* poly,
+    const uint64_t* offsets_mult,
+    bool first_taylor_done)
+{
+  if constexpr(logsize <= 1)
+  {
+    eval_degree1<false>(logstride, offsets_mult[0], poly);
+  }
+  else
+  {
+    constexpr unsigned int t = comp_t(logsize); // power 2**u maximal s.t. < logsize
+    // on input: there are 2**'logstride' interleaved series of size 2**(2*logsize-t)
+    if(!first_taylor_done)
+    {
+#ifdef NEW_DECOMPOSE_TAYLOR
+      mg_decompose_taylor_recursive_alt<logsize, uint64_t>(logstride, poly);
+#else
+      mg_decompose_taylor_recursive<t, uint64_t>(logsize, logstride, poly);
+#endif
+    }
+    // fft on columns
+    // if logsize >= t, each fft should process 2**(logsize - t) values
+    // i.e. logsize' = logsize - t
+    // offset' = offset >> t;
+    mg_core_inlined<logsize - t>(logstride + t, poly, offsets_mult + t, false);
+    uint64_t offsets_local[t];
+    for(unsigned int j = 0; j < t; j++) offsets_local[j] = offsets_mult[j];
+    // 2*t >= logsize > t, therefore tau = 2**(logsize - t) <= 2**t
+    constexpr uint64_t tau   = 1uLL <<  (logsize - t);
+#ifndef GRAY_CODE
+    const uint64_t row_size = 1uLL << (t + logstride);
+    for(uint64_t i = 0; i < tau; i++)
+    {
+      // at each iteration, offsets_local[j] = beta_to_mult(offset + (i << (t-j))), j < t
+      mg_core_inlined<t>(logstride, poly, offsets_local, false);
+      const int h = (int) _mm_popcnt_u64(i^(i+1)); // i^(i+1) is a power of 2 - 1
+      for(unsigned int j = 0; j < t; j++)
+      {
+        int tp = t - j;
+        offsets_local[j] ^= beta_over_mult_cumulative[h + tp] ^ beta_over_mult_cumulative[tp];
+      }
+      poly += row_size;
+    }
+#else
+    for(uint64_t k = 0; k < tau; k++)
+    {
+      mg_core<t>(logstride, poly + ((k ^ (k >> 1)) << (t + logstride)), offsets_local, false);
+      const int h = (int) _tzcnt_u64(~k) + t; // 1 << (h-t) is equal to k ^ (k >> 1) ^ (k+1) ^ ((k+1) >> 1)
+      for(unsigned int j = 0; j < t; j++) offsets_local[j] ^= beta_over_mult[h - j];
+    }
+#endif
+  }
+}
+
 /**
   @brief mg_core
  * computes the 2**logsize first values of 2**logstride interleaved polynomials given on input,
@@ -319,7 +325,7 @@ static void product_batch(uint64_t* restr a_ptru, uint64_t* restr b_ptru, unsign
  * the polynomial to process has small degree; see mg_smalldegree.
  */
 template <unsigned int logsize>
-inline void mg_core(
+void mg_core(
     int logstride,
     uint64_t* poly,
     const uint64_t* offsets_mult,
@@ -335,13 +341,25 @@ inline void mg_core(
     // on input: there are 2**'logstride' interleaved series of size 2**(2*logsize-t)
     if(!first_taylor_done)
     {
-      mg_decompose_taylor_recursive<t, uint64_t>(logstride, logsize, poly);
+#ifdef NEW_DECOMPOSE_TAYLOR
+      mg_decompose_taylor_recursive_alt<logsize, uint64_t>(logstride, poly);
+#else
+      mg_decompose_taylor_recursive<t, uint64_t>(logsize, logstride, poly);
+#endif
     }
     // fft on columns
     // if logsize >= t, each fft should process 2**(logsize - t) values
     // i.e. logsize' = logsize - t
     // offset' = offset >> t;
-    mg_core<logsize - t>(logstride + t, poly, offsets_mult + t, false);
+    constexpr int tp = logsize - t;
+    if constexpr(tp <= inline_bound)
+    {
+      mg_core_inlined<logsize - t>(logstride + t, poly, offsets_mult + t, false);
+    }
+    else
+    {
+      mg_core<logsize - t>(logstride + t, poly, offsets_mult + t, false);
+    }
     uint64_t offsets_local[t];
     for(unsigned int j = 0; j < t; j++) offsets_local[j] = offsets_mult[j];
     // 2*t >= logsize > t, therefore tau = 2**(logsize - t) <= 2**t
@@ -351,7 +369,14 @@ inline void mg_core(
     for(uint64_t i = 0; i < tau; i++)
     {
       // at each iteration, offsets_local[j] = beta_to_mult(offset + (i << (t-j))), j < t
-      mg_core<logstride, t>(poly, offsets_local, false);
+      if constexpr(t <= inline_bound)
+      {
+        mg_core_inlined<t>(logstride, poly, offsets_local, false);
+      }
+      else
+      {
+        mg_core<t>(logstride, poly, offsets_local, false);
+      }
       const int h = (int) _mm_popcnt_u64(i^(i+1)); // i^(i+1) is a power of 2 - 1
       for(unsigned int j = 0; j < t; j++)
       {
@@ -371,21 +396,49 @@ inline void mg_core(
   }
 }
 
-// unused
-template <int s, int logstride, unsigned int logsize> class mg_core_class
+#if 0
+// experiments with generic constification
+
+
+template <unsigned int logsize>
+class mg_core_class
 {
 public:
-static void call(uint64_t* poly, const uint64_t* offsets_mult, bool first_taylor_done){
-  mg_core<s,logstride,logsize>(
-    poly,
-    offsets_mult,
-    first_taylor_done);
-}
+  static void call(int logstride, uint64_t* poly, const uint64_t* offsets_mult,
+                  bool first_taylor_done)
+  {
+    mg_core<logsize>(
+        logstride,
+        poly,
+        offsets_mult,
+        first_taylor_done);
+  }
 };
 
+template <template<unsigned int, class ... Ts2> class T, class... Ts2, class...Ts>
+void constify_alt2(unsigned int n, Ts ... args)
+{
+  if(n==0) T<0, Ts2...>::call(args ...);
+  else if(n==1) T<1, Ts2...>::call(args...);
+}
 
-template <int logstride>
-void constify_mg(int n, uint64_t* poly, const uint64_t* offsets_mult, bool first_taylor_done)
+template <template<int> class T, class...Ts>
+void constify_alt3(int n, Ts ... args)
+{
+  if(n==0) T<0>::call(args ...);
+  else if(n==1) T<1>::call(args...);
+}
+
+void f(int logstride, int n, uint64_t* poly, const uint64_t* offsets_mult, bool first_taylor_done)
+{
+  //does not work because the compiler is unable to delimit Ts and Ts2
+  //constify_alt2<mg_core_class,  int, uint64_t* , const uint64_t* , bool>(n, logstride, poly, offsets_mult, first_taylor_done);
+  //works
+  constify_alt3<mg_core_class,  int, uint64_t* , const uint64_t* , bool>(n, logstride, poly, offsets_mult, first_taylor_done);
+}
+#endif
+
+void constify_mg(int logstride, int n, uint64_t* poly, const uint64_t* offsets_mult, bool first_taylor_done)
 {
   if(n==0) mg_core<0>(logstride, poly, offsets_mult, first_taylor_done);
   else if(n==1) mg_core<1>(logstride, poly, offsets_mult, first_taylor_done);
@@ -401,7 +454,7 @@ void constify_mg(int n, uint64_t* poly, const uint64_t* offsets_mult, bool first
   else if(n==11) mg_core<11>(logstride, poly, offsets_mult, first_taylor_done);
   else if(n==12) mg_core<12>(logstride, poly, offsets_mult, first_taylor_done);
   else if(n==13) mg_core<13>(logstride, poly, offsets_mult, first_taylor_done);
-  else if(n==14) mg_core<14>(logstride, poly, offsets_mult, first_taylor_done); // FIXME this should not zork with that code commented
+  else if(n==14) mg_core<14>(logstride, poly, offsets_mult, first_taylor_done);
   else if(n==15) mg_core<15>(logstride, poly, offsets_mult, first_taylor_done);
   else if(n==16) mg_core<16>(logstride, poly, offsets_mult, first_taylor_done);
   else if(n==17) mg_core<17>(logstride, poly, offsets_mult, first_taylor_done);
@@ -429,6 +482,53 @@ void constify_mg(int n, uint64_t* poly, const uint64_t* offsets_mult, bool first
   else if(n==39) mg_core<39>(logstride, poly, offsets_mult, first_taylor_done);
   else if(n==40) mg_core<40>(logstride, poly, offsets_mult, first_taylor_done);
 }
+
+template<class T>
+void constify_mg_decompose_taylor_recursive_alt(unsigned int logsize, unsigned int logstride, T* p)
+{
+  if(logsize==0) mg_decompose_taylor_recursive_alt<0, T>(logstride, p);
+  else if(logsize==1) mg_decompose_taylor_recursive_alt<1>(logstride, p);
+  else if(logsize==2) mg_decompose_taylor_recursive_alt<2>(logstride, p);
+  else if(logsize==3) mg_decompose_taylor_recursive_alt<3>(logstride, p);
+  else if(logsize==4) mg_decompose_taylor_recursive_alt<4>(logstride, p);
+  else if(logsize==5) mg_decompose_taylor_recursive_alt<5>(logstride, p);
+  else if(logsize==6) mg_decompose_taylor_recursive_alt<6>(logstride, p);
+  else if(logsize==7) mg_decompose_taylor_recursive_alt<7>(logstride, p);
+  else if(logsize==8) mg_decompose_taylor_recursive_alt<8>(logstride, p);
+  else if(logsize==9) mg_decompose_taylor_recursive_alt<9>(logstride, p);
+  else if(logsize==10) mg_decompose_taylor_recursive_alt<10>(logstride, p);
+  else if(logsize==11) mg_decompose_taylor_recursive_alt<11>(logstride, p);
+  else if(logsize==12) mg_decompose_taylor_recursive_alt<12>(logstride, p);
+  else if(logsize==13) mg_decompose_taylor_recursive_alt<13>(logstride, p);
+  else if(logsize==14) mg_decompose_taylor_recursive_alt<14>(logstride, p);
+  else if(logsize==15) mg_decompose_taylor_recursive_alt<15>(logstride, p);
+  else if(logsize==16) mg_decompose_taylor_recursive_alt<16>(logstride, p);
+  else if(logsize==17) mg_decompose_taylor_recursive_alt<17>(logstride, p);
+  else if(logsize==18) mg_decompose_taylor_recursive_alt<18>(logstride, p);
+  else if(logsize==19) mg_decompose_taylor_recursive_alt<19>(logstride, p);
+  else if(logsize==20) mg_decompose_taylor_recursive_alt<20>(logstride, p);
+  else if(logsize==21) mg_decompose_taylor_recursive_alt<21>(logstride, p);
+  else if(logsize==22) mg_decompose_taylor_recursive_alt<22>(logstride, p);
+  else if(logsize==23) mg_decompose_taylor_recursive_alt<23>(logstride, p);
+  else if(logsize==24) mg_decompose_taylor_recursive_alt<24>(logstride, p);
+  else if(logsize==25) mg_decompose_taylor_recursive_alt<25>(logstride, p);
+  else if(logsize==26) mg_decompose_taylor_recursive_alt<26>(logstride, p);
+  else if(logsize==27) mg_decompose_taylor_recursive_alt<27>(logstride, p);
+  else if(logsize==28) mg_decompose_taylor_recursive_alt<28>(logstride, p);
+  else if(logsize==29) mg_decompose_taylor_recursive_alt<29>(logstride, p);
+  else if(logsize==30) mg_decompose_taylor_recursive_alt<30>(logstride, p);
+  else if(logsize==31) mg_decompose_taylor_recursive_alt<31>(logstride, p);
+  else if(logsize==32) mg_decompose_taylor_recursive_alt<32>(logstride, p);
+  else if(logsize==33) mg_decompose_taylor_recursive_alt<33>(logstride, p);
+  else if(logsize==34) mg_decompose_taylor_recursive_alt<34>(logstride, p);
+  else if(logsize==35) mg_decompose_taylor_recursive_alt<35>(logstride, p);
+  else if(logsize==36) mg_decompose_taylor_recursive_alt<36>(logstride, p);
+  else if(logsize==37) mg_decompose_taylor_recursive_alt<37>(logstride, p);
+  else if(logsize==38) mg_decompose_taylor_recursive_alt<38>(logstride, p);
+  else if(logsize==39) mg_decompose_taylor_recursive_alt<39>(logstride, p);
+  else if(logsize==40) mg_decompose_taylor_recursive_alt<40>(logstride, p);
+}
+
 
 
 /**
@@ -466,8 +566,13 @@ void mg_smalldegree(
       mg_smalldegree<s-1>(p, logsizeprime, logsize);
       return;
     }
+#ifdef NEW_DECOMPOSE_TAYLOR
+    constify_mg_decompose_taylor_recursive_alt<uint64_t>(logsizeprime, 0u, p);
+#else
     constexpr unsigned int t = 1u << (s - 1);
-    mg_decompose_taylor_recursive<t, uint64_t>(0u, logsizeprime, p);
+    mg_decompose_taylor_recursive<t, uint64_t>(logsizeprime, 0, p);
+#endif
+
     for(uint64_t i = 1; i < 1uLL << (logsize - logsizeprime); i++)
     {
       uint64_t* q = p + (i << logsizeprime);
@@ -481,7 +586,7 @@ void mg_smalldegree(
     {
       uint64_t* q = p + (i << logsizeprime);
       //mg_core<s, 0>(q, offsets_mult, logsizeprime, true);
-      constify_mg <0>(logsizeprime, q, offsets_mult, true);
+      constify_mg (0, logsizeprime, q, offsets_mult, true);
       const int h = (int) _mm_popcnt_u64(i^(i+1));
       // goal: xor to offsets_mult[j] to the multiplicative representation w of the value
       // v = (i^(i+1) << logsizeprime) >> j in beta representation,
@@ -515,7 +620,7 @@ void mg_smalldegree(
     uint64_t offsets_mult[1];
     offsets_mult[0] = 0;
     //mg_core<0, 0>(p, offsets_mult, logsize, false);
-    constify_mg <0>(logsize, p, offsets_mult, true);
+    constify_mg(0, logsize, p, offsets_mult, true);
   }
 }
 
@@ -539,14 +644,16 @@ void mg_smalldegree_with_buf(
     uint64_t* buf = new uint64_t[1uLL << logsizeprime];
     unique_ptr<uint64_t[]> _(buf);
 
-    constexpr unsigned int t = 1u << (s - 1);
-
     const uint64_t szp = 1uLL << logsizeprime;
     // the natural order of operations is to expand p (expand every 32-bit word into q 64-bit word),
     // then apply mg_decompose_taylor_recursive on 64-bit words
     // this is equivalent to doing mg_decompose_taylor_recursive on 32-bit words, then expanding
-    mg_decompose_taylor_recursive<t, uint32_t>(0, logsizeprime, (uint32_t*)p);
-
+#ifdef NEW_DECOMPOSE_TAYLOR
+    constify_mg_decompose_taylor_recursive_alt<uint32_t>(logsizeprime, 0u, (uint32_t*)p);
+#else
+    constexpr unsigned int t = 1u << (s - 1);
+    mg_decompose_taylor_recursive<t, uint32_t>(logsizeprime, 0u, (uint32_t*)p);
+#endif
     uint64_t offsets_mult[1 << s];
     for(int i = 0; i < (1 << s); i++) offsets_mult[i] = 0;
 
@@ -554,7 +661,7 @@ void mg_smalldegree_with_buf(
     {
       expand(buf, p, szp * 32 - 1, szp);
       //mg_core<s, 0>(buf, offsets_mult, logsizeprime, true);
-      constify_mg <0>(logsizeprime, buf, offsets_mult, true);
+      constify_mg (0, logsizeprime, buf, offsets_mult, true);
       // logsizeprime >= 2 (see above)
       product_batch(main_buf + (i << logsizeprime), buf, logsizeprime);
       const int h = (int) _mm_popcnt_u64(i^(i+1));
@@ -574,31 +681,27 @@ void mg_smalldegree_with_buf(
     uint64_t offsets_mult[1];
     offsets_mult[0] = 0;
     //mg_core<0, 0>(p, offsets_mult, logsize, false);
-    constify_mg <0>(logsize, p, offsets_mult, false);
+    constify_mg(0, logsize, p, offsets_mult, false);
     for(int i = 0; i < 1 << logsize; i++) main_buf[i] = product(main_buf[i], p[i]);
   }
 }
 
-/**
- * @brief mg_reverse_core
- * Reverse of mg_core. See mg_core for argument description.
- */
-template <int s, int logstride>
-void mg_reverse_core(
+template <unsigned int logsize>
+extern inline force_inline void mg_reverse_core_inlined(
+    int logstride,
     uint64_t* poly,
-    const uint64_t* offsets_mult,
-    unsigned int logsize)
+    const uint64_t* offsets_mult)
 {
-  if constexpr(s == 0)
+  if constexpr(logsize <= 1)
   {
     eval_degree1<true>(logstride, offsets_mult[0], poly);
   }
   else
   {
-    constexpr unsigned int t = 1 << (s - 1);
-    if(logsize <= t)
+    constexpr unsigned int t = comp_t(logsize);
+    if constexpr(logsize <= t)
     {
-      mg_reverse_core<s - 1, logstride>(poly, offsets_mult, logsize);
+      mg_reverse_core_inlined<logsize>(logstride, poly, offsets_mult);
     }
     else
     {
@@ -612,7 +715,7 @@ void mg_reverse_core(
       for(uint64_t i = 0; i < tau; i++)
       {
         // at each iteration, offsets_local[j] = beta_to_mult(offset + (i << (t-j))), j < t
-        mg_reverse_core<s - 1, logstride>(poly_loc, offsets_local, t);
+        mg_reverse_core_inlined<t>(logstride, poly_loc, offsets_local);
         const int h = (int) _mm_popcnt_u64(i^(i+1));
         for(unsigned int j = 0; j < t; j++)
         {
@@ -624,17 +727,134 @@ void mg_reverse_core(
 #else
       for(uint64_t k = 0; k < tau; k++)
       {
-        mg_reverse_core<s - 1, logstride>(poly + ((k ^ (k >> 1)) << (t + logstride)), offsets_local, t);
+        mg_reverse_core_inlined<t>(logstride, poly + ((k ^ (k >> 1)) << (t + logstride)), offsets_local);
         const int h = (int) _tzcnt_u64(~k) + t; // 1 << (h-t) is equal to k ^ (k >> 1) ^ (k+1) ^ ((k+1) >> 1)
         for(unsigned int j = 0; j < t; j++) offsets_local[j] ^= beta_over_mult[h - j];
       }
 #endif
       // reverse fft on columns
       //offset' = offset >> t;
-      mg_reverse_core<s - 1, logstride + t>(poly, offsets_mult + t, logsize - t);
-      mg_decompose_taylor_reverse_recursive<logstride, t>(logsize, poly);
+      mg_reverse_core_inlined<logsize - t>(logstride + t, poly, offsets_mult + t);
+      mg_decompose_taylor_reverse_recursive<t>(logstride, logsize, poly);
     }
   }
+}
+
+/**
+ * @brief mg_reverse_core
+ * Reverse of mg_core. See mg_core for argument description.
+ */
+template <unsigned int logsize>
+void mg_reverse_core(
+    int logstride,
+    uint64_t* poly,
+    const uint64_t* offsets_mult)
+{
+  if constexpr(logsize <= 1)
+  {
+    eval_degree1<true>(logstride, offsets_mult[0], poly);
+  }
+  else
+  {
+    constexpr unsigned int t = comp_t(logsize);
+    if constexpr(logsize <= t)
+    {
+      if constexpr(logsize <= inline_bound)
+      {
+        mg_reverse_core_inlined<logsize>(logstride, poly, offsets_mult);
+      }
+      else
+      {
+        mg_reverse_core<logsize>(logstride, poly, offsets_mult);
+      }
+    }
+    else
+    {
+      uint64_t offsets_local[t];
+      for(unsigned int j = 0; j < t; j++) offsets_local[j] = offsets_mult[j];
+      // 2*t >= logsize > t, therefore tau < 2**t
+      const uint64_t tau   = 1uLL <<  (logsize - t);
+#ifndef GRAY_CODE
+      const uint64_t row_size = 1uLL << (t + logstride);
+      uint64_t* poly_loc = poly;
+      for(uint64_t i = 0; i < tau; i++)
+      {
+        // at each iteration, offsets_local[j] = beta_to_mult(offset + (i << (t-j))), j < t
+        if constexpr(t <= inline_bound)
+        {
+          mg_reverse_core_inlined<t>(logstride, poly_loc, offsets_local);
+        }
+        else
+        {
+          mg_reverse_core<t>(logstride, poly_loc, offsets_local);
+        }
+        const int h = (int) _mm_popcnt_u64(i^(i+1));
+        for(unsigned int j = 0; j < t; j++)
+        {
+          int tp = t - j;
+          offsets_local[j] ^= beta_over_mult_cumulative[h + tp] ^ beta_over_mult_cumulative[tp];
+        }
+        poly_loc += row_size;
+      }
+#else
+      for(uint64_t k = 0; k < tau; k++)
+      {
+        mg_reverse_core<t>(logstride, poly + ((k ^ (k >> 1)) << (t + logstride)), offsets_local);
+        const int h = (int) _tzcnt_u64(~k) + t; // 1 << (h-t) is equal to k ^ (k >> 1) ^ (k+1) ^ ((k+1) >> 1)
+        for(unsigned int j = 0; j < t; j++) offsets_local[j] ^= beta_over_mult[h - j];
+      }
+#endif
+      // reverse fft on columns
+      //offset' = offset >> t;
+      mg_reverse_core<logsize - t>(logstride + t, poly, offsets_mult + t);
+      mg_decompose_taylor_reverse_recursive<t>(logstride, logsize, poly);
+    }
+  }
+}
+
+void constify_mgr(int n, int logstride, uint64_t* poly, const uint64_t* offsets_mult)
+{
+  if(n==0) mg_reverse_core<0>(logstride, poly, offsets_mult);
+  else if(n==1) mg_reverse_core<1>(logstride, poly, offsets_mult);
+  else if(n==2) mg_reverse_core<2>(logstride, poly, offsets_mult);
+  else if(n==3) mg_reverse_core<3>(logstride, poly, offsets_mult);
+  else if(n==4) mg_reverse_core<4>(logstride, poly, offsets_mult);
+  else if(n==5) mg_reverse_core<5>(logstride, poly, offsets_mult);
+  else if(n==6) mg_reverse_core<6>(logstride, poly, offsets_mult);
+  else if(n==7) mg_reverse_core<7>(logstride, poly, offsets_mult);
+  else if(n==8) mg_reverse_core<8>(logstride, poly, offsets_mult);
+  else if(n==9) mg_reverse_core<9>(logstride, poly, offsets_mult);
+  else if(n==10) mg_reverse_core<10>(logstride, poly, offsets_mult);
+  else if(n==11) mg_reverse_core<11>(logstride, poly, offsets_mult);
+  else if(n==12) mg_reverse_core<12>(logstride, poly, offsets_mult);
+  else if(n==13) mg_reverse_core<13>(logstride, poly, offsets_mult);
+  else if(n==14) mg_reverse_core<14>(logstride, poly, offsets_mult);
+  else if(n==15) mg_reverse_core<15>(logstride, poly, offsets_mult);
+  else if(n==16) mg_reverse_core<16>(logstride, poly, offsets_mult);
+  else if(n==17) mg_reverse_core<17>(logstride, poly, offsets_mult);
+  else if(n==18) mg_reverse_core<18>(logstride, poly, offsets_mult);
+  else if(n==19) mg_reverse_core<19>(logstride, poly, offsets_mult);
+  else if(n==20) mg_reverse_core<20>(logstride, poly, offsets_mult);
+  else if(n==21) mg_reverse_core<21>(logstride, poly, offsets_mult);
+  else if(n==22) mg_reverse_core<22>(logstride, poly, offsets_mult);
+  else if(n==23) mg_reverse_core<23>(logstride, poly, offsets_mult);
+  else if(n==24) mg_reverse_core<24>(logstride, poly, offsets_mult);
+  else if(n==25) mg_reverse_core<25>(logstride, poly, offsets_mult);
+  else if(n==26) mg_reverse_core<26>(logstride, poly, offsets_mult);
+  else if(n==27) mg_reverse_core<27>(logstride, poly, offsets_mult);
+  else if(n==28) mg_reverse_core<28>(logstride, poly, offsets_mult);
+  else if(n==29) mg_reverse_core<29>(logstride, poly, offsets_mult);
+  else if(n==30) mg_reverse_core<30>(logstride, poly, offsets_mult);
+  else if(n==31) mg_reverse_core<31>(logstride, poly, offsets_mult);
+  else if(n==32) mg_reverse_core<32>(logstride, poly, offsets_mult);
+  else if(n==33) mg_reverse_core<33>(logstride, poly, offsets_mult);
+  else if(n==34) mg_reverse_core<34>(logstride, poly, offsets_mult);
+  else if(n==35) mg_reverse_core<35>(logstride, poly, offsets_mult);
+  else if(n==36) mg_reverse_core<36>(logstride, poly, offsets_mult);
+  else if(n==37) mg_reverse_core<37>(logstride, poly, offsets_mult);
+  else if(n==38) mg_reverse_core<38>(logstride, poly, offsets_mult);
+  else if(n==39) mg_reverse_core<39>(logstride, poly, offsets_mult);
+  else if(n==40) mg_reverse_core<40>(logstride, poly, offsets_mult);
 }
 
 void mg_binary_polynomial_multiply(uint64_t* p1, uint64_t* p2, uint64_t* result, uint64_t d1, uint64_t d2)
@@ -670,7 +890,7 @@ void mg_binary_polynomial_multiply(uint64_t* p1, uint64_t* p2, uint64_t* result,
   }
   uint64_t offsets_mult[1 << s];
   for(int i = 0; i < (1 << s); i++) offsets_mult[i] = 0;
-  mg_reverse_core<s,0>(b1, offsets_mult, logsize_result);
+  constify_mgr(logsize_result, 0, b1, offsets_mult);
   contract(result, b1, d1 + d2);
 }
 
@@ -695,6 +915,6 @@ void mg_binary_polynomial_multiply_in_place (uint64_t* p1, uint64_t* p2, uint64_
   expand(p1, p1, d1, sz_result);
   mg_smalldegree<s>((uint64_t*) p1, logsize_1, logsize_result);
   mg_smalldegree_with_buf<s>(p2, logsize_2, logsize_result, p1);
-  mg_reverse_core<s,0>(p1, offsets_mult, logsize_result);
+  constify_mgr(logsize_result, 0, p1, offsets_mult);
   contract(p1, p1, d1 + d2);
 }

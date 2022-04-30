@@ -12,10 +12,12 @@
 #ifdef __GNUC__
 // unused, _mm_set_epi64x is preferred
 #define m128_extract(v,idx) (v)[idx]
+#define force_inline __attribute__((always_inline))
 #else
 #ifdef _MSC_VER
 // unused, _mm_set_epi64x is preferred
 #define m128_extract(v,idx) (v).m128i_i64[idx]
+#define force_inline __forceinline
 #else
 #error "unsupported compiler"
 #endif
@@ -504,6 +506,15 @@ static inline void eval_degree1(int logstride, const uint64_t val,  uint64_t* re
 #endif
 }
 
+constexpr int comp_t(int n){
+  if (n<=2) return 1;
+  else if (n<=4) return 2;
+  else if (n<=8) return 4;
+  else if (n<=16) return 8;
+  else if (n<=32) return 16;
+  else return 32;
+}
+
 /**
  * @brief mg_decompose_taylor_recursive
  * in-place taylor decomposition of input interleaved polynomials pointed by 'p'.
@@ -520,10 +531,71 @@ static inline void eval_degree1(int logstride, const uint64_t val,  uint64_t* re
  * @param logsize
  * @param p
  */
-template<unsigned int t, class T>
-inline void mg_decompose_taylor_recursive(
+
+template<unsigned int logsize, class T>
+extern inline force_inline void mg_decompose_taylor_recursive_alt_inlined(
     unsigned int logstride,
+    T* restr pu)
+{
+  constexpr unsigned int t = comp_t(logsize);
+  T* restr p = (T*) std::assume_aligned<16>(pu);
+  static_assert(t >= 1);
+  assert(logsize > t && logsize <= 2*t);
+  //decompose_taylor_one_step
+  const uint64_t delta_s   = 1uLL << (logstride + logsize - 1 - t); // logn - 1 - t >= 0
+  const uint64_t n_s = 1uLL  << (logstride + logsize);
+  const uint64_t m_s = n_s >> 1;
+  T* q = p + delta_s - m_s;
+  // m_s > 0, hence the loop below is not infinite
+  // see however the discussion in mg_decompose_taylor_reverse_recursive about undefined behavior
+  // in the loop
+  for(uint64_t i = n_s - 1; i > m_s - 1; i--) q[i] ^= p[i];
+
+  if constexpr(logsize > t + 1)
+  {
+    mg_decompose_taylor_recursive_alt_inlined<logsize - 1, T>(logstride, p);
+    mg_decompose_taylor_recursive_alt_inlined<logsize - 1, T>(logstride, p + m_s);
+  }
+}
+
+
+template<unsigned int logsize, class T>
+void mg_decompose_taylor_recursive_alt(
+    unsigned int logstride,
+    T* restr pu)
+{
+  if constexpr(logsize <= inline_bound)
+  {
+    mg_decompose_taylor_recursive_alt_inlined<logsize, T>(logstride, pu);
+  }
+  else
+  {
+    constexpr unsigned int t = comp_t(logsize);
+    T* restr p = (T*) std::assume_aligned<16>(pu);
+    static_assert(t >= 1);
+    assert(logsize > t && logsize <= 2*t);
+    //decompose_taylor_one_step
+    const uint64_t delta_s   = 1uLL << (logstride + logsize - 1 - t); // logn - 1 - t >= 0
+    const uint64_t n_s = 1uLL  << (logstride + logsize);
+    const uint64_t m_s = n_s >> 1;
+    T* q = p + delta_s - m_s;
+    // m_s > 0, hence the loop below is not infinite
+    // see however the discussion in mg_decompose_taylor_reverse_recursive about undefined behavior
+    // in the loop
+    for(uint64_t i = n_s - 1; i > m_s - 1; i--) q[i] ^= p[i];
+
+    if constexpr(logsize > t + 1)
+    {
+      mg_decompose_taylor_recursive_alt<logsize - 1, T>(logstride, p);
+      mg_decompose_taylor_recursive_alt<logsize - 1, T>(logstride, p + m_s);
+    }
+  }
+}
+
+template<unsigned int t, class T>
+void mg_decompose_taylor_recursive(
     unsigned int logsize,
+    unsigned int logstride,
     T* restr pu)
 {
   T* restr p = (T*) std::assume_aligned<16>(pu);
@@ -541,8 +613,8 @@ inline void mg_decompose_taylor_recursive(
 
   if(logsize > t + 1)
   {
-    mg_decompose_taylor_recursive<t, T>(logstride, logsize - 1, p);
-    mg_decompose_taylor_recursive<t, T>(logstride, logsize - 1, p + m_s);
+    mg_decompose_taylor_recursive<t, T>(logsize - 1, logstride, p);
+    mg_decompose_taylor_recursive<t, T>(logsize - 1, logstride, p + m_s);
   }
 }
 
@@ -554,8 +626,9 @@ inline void mg_decompose_taylor_recursive(
  * @param logsize
  * @param p
  */
-template<unsigned int logstride, unsigned int t>
+template<unsigned int t>
 inline void mg_decompose_taylor_reverse_recursive(
+    unsigned int logstride,
     unsigned int logsize,
     uint64_t* p)
 {
@@ -565,8 +638,8 @@ inline void mg_decompose_taylor_reverse_recursive(
   const uint64_t m_s = n_s >> 1;
   if(logsize > t + 1)
   {
-    mg_decompose_taylor_reverse_recursive<logstride, t>(logsize - 1, p);
-    mg_decompose_taylor_reverse_recursive<logstride, t>(logsize - 1, p + m_s);
+    mg_decompose_taylor_reverse_recursive<t>(logstride, logsize - 1, p);
+    mg_decompose_taylor_reverse_recursive<t>(logstride, logsize - 1, p + m_s);
   }
 
   //decompose_taylor_one_step_reverse
