@@ -396,48 +396,6 @@ void mg_core(
   }
 }
 
-#if 0
-// experiments with generic constification
-
-
-template <unsigned int logsize>
-class mg_core_class
-{
-public:
-  static void call(int logstride, uint64_t* poly, const uint64_t* offsets_mult,
-                  bool first_taylor_done)
-  {
-    mg_core<logsize>(
-        logstride,
-        poly,
-        offsets_mult,
-        first_taylor_done);
-  }
-};
-
-template <template<unsigned int, class ... Ts2> class T, class... Ts2, class...Ts>
-void constify_alt2(unsigned int n, Ts ... args)
-{
-  if(n==0) T<0, Ts2...>::call(args ...);
-  else if(n==1) T<1, Ts2...>::call(args...);
-}
-
-template <template<int> class T, class...Ts>
-void constify_alt3(int n, Ts ... args)
-{
-  if(n==0) T<0>::call(args ...);
-  else if(n==1) T<1>::call(args...);
-}
-
-void f(int logstride, int n, uint64_t* poly, const uint64_t* offsets_mult, bool first_taylor_done)
-{
-  //does not work because the compiler is unable to delimit Ts and Ts2
-  //constify_alt2<mg_core_class,  int, uint64_t* , const uint64_t* , bool>(n, logstride, poly, offsets_mult, first_taylor_done);
-  //works
-  constify_alt3<mg_core_class,  int, uint64_t* , const uint64_t* , bool>(n, logstride, poly, offsets_mult, first_taylor_done);
-}
-#endif
-
 void constify_mg(int logstride, int n, uint64_t* poly, const uint64_t* offsets_mult, bool first_taylor_done)
 {
   if(n==0) mg_core<0>(logstride, poly, offsets_mult, first_taylor_done);
