@@ -80,7 +80,7 @@ Starting from a constructed base $\{\beta_i\}$, and with $\beta$ a linear combin
 
 #### "Outer" construction: joint construction of the field and the basis
 
-We can also construct $\mathbb{F}$ jointly with $\beta_i$, by successive extensions of $\mathbb{F}_2$: if $\beta_1, \beta_2, \ldots,\beta_i$ are already constructed with $\beta_1=1$, $\beta_{i+1}$ is constructed as a solution of $(E)$, which is a linear equation with a nontrivial kernel (if $v$ is a solution, the other is $v+1$); if there is none, we extend the field $<\beta_1,\ldots,\beta_i>$ by an element *defined* by $(E)$. This happens when $i$ is a power of 2 and has the effect of doubling the dimension of the generated field over $\mathbb{F}_2$.
+We can also construct $\mathbb{F}$ jointly with $\beta_i$, by successive extensions of $\mathbb{F}_{2}$: if $\beta_1, \beta_2, \ldots,\beta_i$ are already constructed with $\beta_1=1$, $\beta_{i+1}$ is constructed as a solution of $(E)$, which is a linear equation with a nontrivial kernel (if $v$ is a solution, the other is $v+1$); if there is none, we extend the field $<\beta_1,\ldots,\beta_i>$ by an element *defined* by $(E)$. This happens when $i$ is a power of 2 and has the effect of doubling the dimension of the generated field over $\mathbb{F}_2$.
 
 ## Mateer-Gao
 
