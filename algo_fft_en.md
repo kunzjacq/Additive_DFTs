@@ -59,7 +59,7 @@ As a particular case, $\sigma_i(\beta_{i+1})=\sigma_i(\omega_{2^{i}})=\omega_{1}
 
 Let us also mention the following formula (not used in the following):
 $$\sigma_i (x) = \sum_{d=0}^{i} \left(\begin{array}{c}i\\ d\end{array}\right) \ x^{2^d}$$
-The $\left(\begin{array}{c}i\\d\end{array}\right)$ are the binomial coefficients and are understood modulo 2. The formula is shown by recurrence, like the one for the development of $(1+x)^i$.
+The $\left(\begin{array}{c}i\\ d\end{array}\right)$ are the binomial coefficients and are understood modulo 2. The formula is shown by recurrence, like the one for the development of $(1+x)^i$.
 
 #### Construction of a Cantor basis
 
@@ -72,11 +72,11 @@ Starting from a given field $\mathbb{F}$ of cardinal $2^{2^s}$, $n=2^s$, let us 
 - $\sigma_n(x) = x^{2^n} + x$ has exactly the $2^n$ elements of $\mathbb{F}$ as roots;
 - $\sigma_n = \sigma_{n-i} \circ \sigma_i$; since $\sigma_{n-i}(0)=0$, the roots of $\sigma_{n-i}$ are included in those of $\sigma_n$, so they are all in $\mathbb{F}$; therefore the $2^i$ roots of $\sigma_i$ are in $\mathbb{F}$.
 
-We choose $\beta_n$ a root of $\sigma_n$ but not of $\sigma_{n-1}$, and for all $i<n$, $\beta_i = \varphi(\beta_{i+1})$. Then $\varphi(\beta_1) = \sigma_n(\beta_n) = 0$ but $\beta_1 = \sigma_{n-1}(\beta_n) \neq 0$: as $\varphi(x)=0$ has roots 0 and 1, $\beta_1=1$.
+We choose $\beta_n$ a root of $\sigma_n$ but not of $\sigma_{n-1}$, and for all $i < n$, $\beta_i = \varphi(\beta_{i+1})$. Then $\varphi(\beta_1) = \sigma_n(\beta_n) = 0$ but $\beta_1 = \sigma_{n-1}(\beta_n) \neq 0$: as $\varphi(x)=0$ has roots 0 and 1, $\beta_1=1$.
 
 As $\sigma_i$ has $2^i$ roots in $\mathbb{F}$, there are $2^{n-1}$ valid choices for $\beta_n$, that is to say, half of the values of $\mathbb{F}$; it is thus not difficult to find a valid value for $\beta_n$.
 
-Starting from a constructed base $\{\beta_i\}$, and with $\beta$ a linear combination of $\beta_1,\ldots,\beta_{n-1}$, let $\gamma_n = \beta_n + \beta$ and for all $i<n$, $\gamma_i = \varphi(\gamma_{i+1})$. Then by linearity of $\sigma_n$ and $\sigma_{n-1}$, $\sigma_n(\gamma_n)=0$ and $\sigma_{n-1}(\beta_n) = \sigma_{n-1}(\beta_n) \neq 0$: $\{\gamma_i\}$ is another Cantor basis. All Cantor bases are obtained in this way because there are $2^{n-1}$ possible values for $\beta$.
+Starting from a constructed base $\{\beta_i\}$, and with $\beta$ a linear combination of $\beta_1,\ldots,\beta_{n-1}$, let $\gamma_n = \beta_n + \beta$ and for all $i < n$, $\gamma_i = \varphi(\gamma_{i+1})$. Then by linearity of $\sigma_n$ and $\sigma_{n-1}$, $\sigma_n(\gamma_n)=0$ and $\sigma_{n-1}(\beta_n) = \sigma_{n-1}(\beta_n) \neq 0$: $\{\gamma_i\}$ is another Cantor basis. All Cantor bases are obtained in this way because there are $2^{n-1}$ possible values for $\beta$.
 
 #### "Outer" construction: joint construction of the field and the basis
 
