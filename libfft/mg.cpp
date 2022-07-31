@@ -14,7 +14,7 @@ using namespace std;
  * in multplicative representation, i.e. in GF(2**64) as described in
  * function 'product'. beta_i refers to the beta basis in Mateer-Gao algorithm.
  */
-static constexpr uint64_t beta_over_mult_cumulative[] = {
+static constexpr uint64_t beta_over_mult_cumulative_orig[] = {
   0x0,               0x1,               0x19c9369f278adc03,0xb848d14948d52b96,
   0xfc39a481a127aa9d,0xfd02a1ae1c3b51c0,0x4ae8fb39198c2000, 0xc9e636090aafc01,
   0x160266090832ba8e,0x0698fbda5886d236,0x1ed3c0aa2cc028ce,0xa3f2c7d05d050384,
@@ -35,7 +35,7 @@ static constexpr uint64_t beta_over_mult_cumulative[] = {
 };
 
 #ifdef GRAY_CODE
-static constexpr uint64_t beta_over_mult[] = {
+static constexpr uint64_t beta_over_mult_orig[] = {
   0x1               , 0x19c9369f278adc02, 0xa181e7d66f5ff795, 0x447175c8e9f2810b,
   0x013b052fbd1cfb5d, 0xb7ea5a9705b771c0, 0x467698598926dc01, 0x1a9c05699898468f,
   0x109a9dd350b468b8, 0x184b3b707446faf8, 0xbd21077a71c52b4a, 0xfd4fb47b8220beec,
@@ -53,7 +53,15 @@ static constexpr uint64_t beta_over_mult[] = {
   0xb60c77a147cd8953, 0x5bf866708a444e09, 0x1449d1fdf01d5b76, 0xb230b2ee57674530,
   0x46fbb34fb404e77d, 0x1ea01f4ba902109e, 0x0d8989c26ace34e6, 0x8b7f48848818e45c
 };
+
 #endif
+
+static uint64_t beta_over_mult_alt[64];
+static uint64_t beta_over_mult_cumulative_alt[64];
+
+static uint64_t* beta_over_mult = beta_over_mult_alt;
+static uint64_t* beta_over_mult_cumulative = beta_over_mult_cumulative_alt;
+
 
 void naive_product(uint64_t* p1u, uint64_t n1, uint64_t* p2u, uint64_t n2, uint64_t* qu)
 {
@@ -160,6 +168,29 @@ static inline uint64_t product(const uint64_t&a, const uint64_t&b)
   xc = _mm_clmulepi64_si128(xa, xc, 0x11);
   xb = _mm_xor_si128(xb, xc);
   return _mm_extract_epi64(xb, 0);
+}
+
+#include<iostream>
+#include<iomanip>
+
+void init_alt_table(){
+  //constexpr uint64_t start_value = 0x8b7f48848818e45c;//0x2000000000000000; // does not work with the second value for some reason
+  constexpr uint64_t start_value = 0x8000000000000001;
+  // tested to generate the full suite
+  beta_over_mult_alt[63] = start_value;
+  for(int i = 62; i >= 0; i--) {
+    uint64_t val = beta_over_mult_alt[i+1];
+    beta_over_mult_alt[i] = val^product(val, val);
+  }
+
+  beta_over_mult_cumulative_alt[0]=0;
+  for(int i = 1; i < 64; i++) {
+    beta_over_mult_cumulative_alt[i]=beta_over_mult_cumulative_alt[i-1]^beta_over_mult_alt[i-1];
+  }
+
+  if(beta_over_mult_alt[0] != 1) {
+    std::cout << "***************Error in array initialization!!*************" << std::endl;
+  }
 }
 
 /**

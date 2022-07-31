@@ -39,4 +39,4 @@ void mg_binary_polynomial_multiply(uint64_t *p1, uint64_t *p2, uint64_t *result,
 
 void mg_binary_polynomial_multiply_in_place (uint64_t *p1, uint64_t *p2, uint64_t d1, uint64_t d2);
 
-
+void init_alt_table();
