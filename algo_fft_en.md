@@ -1,8 +1,10 @@
 # Additive DFT algorithms: Cantor, Mateer-Gao
 
+Note: this document is best viewed oustide of GitHub which has several LaTeX rendering bugs.
+
 ## References
 
-- 1] Todd Mateer's master thesis, "Fast Fourier Transform Algorithms with Applications", 2008.
+- [1] Todd Mateer's master thesis, "Fast Fourier Transform Algorithms with Applications", 2008.
 
 ## Von Zur Gathen - Gerhard, Cantor - Wang Zhu
 
