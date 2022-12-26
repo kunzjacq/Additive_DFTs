@@ -122,6 +122,7 @@ int cantor_basis_bare<word>::error() const
 template<class word>
 void cantor_basis_bare<word>::build_from_subfield()
 {
+  // hypotheses:
   // - m_gamma_products[sq + n * nonsq] = g1*g2, sq = g1 & g2, nonsq = g1^g2,
   //    is computed for g1, g2 < n1, n1 = 2**i
   // - m_beta_over_gamma[j] is computed for j < n1
@@ -130,7 +131,7 @@ void cantor_basis_bare<word>::build_from_subfield()
 
   time_point<high_resolution_clock> begin, end;
   auto subfield = new cantor_basis<typename c_b_t<word>::half_type>;
-  unique_ptr<typeof(*subfield)> _(subfield);
+  unique_ptr<remove_reference_t<decltype(*subfield)>> _(subfield);
   begin = high_resolution_clock::now();
   static_assert(c_b_t<typename c_b_t<word>::half_type>::n < c_b_t<word>::n, "template instatiation error");
   static_assert(is_same<typename c_b_t<typename c_b_t<word>::half_type>::log_type, typename c_b_t<word>::log_type>::value, "template instatiation error");
@@ -279,7 +280,7 @@ void cantor_basis_bare<word>::build()
 
   if constexpr(c_b_t<word>::n == 64 && !use_new_gen)
   {
-    // computed with sage a a root of x^64 + x^4 + x^3 + x + 1
+    // a root of x^64 + x^4 + x^3 + x + 1, computed with sage
     uint64_t new_mult_gen = 0x23ec4049a11d7802;
     uint64_t new_mult_gen_gamma = mult_to_gamma(new_mult_gen);
     if(debug) cout << "Multiplicative generator in gamma representation w: " << hex << new_mult_gen_gamma << dec << endl;

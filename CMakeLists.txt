@@ -8,6 +8,13 @@ message("CMAKE_SYSTEM_NAME: ${CMAKE_SYSTEM_NAME}")
 set(CMAKE_VERBOSE_MAKEFILE on)
 
 option(LTO "Link-time optimization" ON)
+
+#option to use boost for large integers. To use boost: set the option,
+# and if Cmake does not find Boost path (esp. under Windows), add to cmake the option
+# -D BOOST_ROOT=<boost path>
+#Windows example:
+#-D BOOST_ROOT=C:\\boost_1_78_0
+
 option(USE_BOOST "Use Boost for large integers" OFF)
 
 if(LTO)
@@ -55,8 +62,10 @@ elseif (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
 endif()
 
 if(USE_BOOST)
+  message("BOOST_ROOT: ${BOOST_ROOT}")
   find_package(Boost 1.65)
   message("Boost librairies: ${Boost_LIBRARIES}")
+  message("Boost include dirs: ${Boost_INCLUDE_DIR}")
 endif()
 
 configure_file("defs.h.in" "defs.h")
@@ -97,7 +106,9 @@ endif()
 if(Boost_FOUND)
   message("Using Boost for large integers")
   target_link_libraries(cantor_basis_test ${Boost_LIBRARIES})
+  target_include_directories(cantor_basis_test PRIVATE "${Boost_INCLUDE_DIR}")
   target_link_libraries(fft_test ${Boost_LIBRARIES})
+  target_include_directories(fft_test PRIVATE "${Boost_INCLUDE_DIR}")
 else()
   message("Boost large integers not available")
 endif()

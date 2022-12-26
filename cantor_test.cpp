@@ -29,7 +29,7 @@ public:
 template<>
 class target<uint32_t>{
 public:
-  static constexpr uint32_t result = 0xea86b890uL;
+  static constexpr uint32_t result = 0x49d30086uL; //0xea86b890uL;
 };
 
 template<>
@@ -89,13 +89,6 @@ public:
 constexpr uint2048_t target<uint2048_t>::result;
 #endif
 
-
-constexpr uint8_t target<uint8_t>::result;
-constexpr uint16_t target<uint16_t>::result;
-constexpr uint32_t target<uint32_t>::result;
-constexpr uint64_t target<uint64_t>::result;
-constexpr uint128_t target<uint128_t>::result;
-
 static const size_t n_vals = 256;
 
 template <class word> cantor_basis<word>* create_basis();
@@ -122,14 +115,14 @@ int main()
     cout << "Reduced test" << endl;
     cout << "Testing f[2**8]" << endl;
     full_test<uint8_t>();
-    cout << "Testing f[2**16]" << endl;
+    cout << endl << "Testing f[2**16]" << endl;
     full_test<uint16_t>();
-    cout << "Testing f[2**32]" << endl;
+    cout << endl << "Testing f[2**32]" << endl;
     full_test<uint32_t>();
-    cout << "Testing f[2**64]" << endl;
+    cout << endl << "Testing f[2**64]" << endl;
     full_test<uint64_t>();
 #ifdef HAS_UINT2048
-    cout << "Testing f[2**2048]" << endl;
+    cout << endl << "Testing f[2**2048]" << endl;
     full_test<uint2048_t>();
 #endif
   }
@@ -151,27 +144,26 @@ int main()
     cout << endl << "Testing f[2**128]" << endl;
     full_test<uint128_t>();
 
-  #ifdef HAS_UINT256
+#ifdef HAS_UINT256
     cout << endl << "Testing f[2**256]" << endl;
     full_test<uint256_t>();
-  #endif
+#endif
 
-  #ifdef HAS_UINT512
+#ifdef HAS_UINT512
     cout << endl << "Testing f[2**512]" << endl;
     full_test<uint512_t>();
-  #endif
+#endif
 
-  #ifdef HAS_UINT1024
+#ifdef HAS_UINT1024
     cout << endl << "Testing f[2**1024]" << endl;
     full_test<uint1024_t>();
-  #endif
+#endif
 
-  #ifdef HAS_UINT2048
+#ifdef HAS_UINT2048
     cout << endl << "Testing f[2**2048]" << endl;
     full_test<uint2048_t>();
-  #endif
+#endif
   }
-
   return 0;
 }
 
@@ -207,7 +199,7 @@ template <class word> cantor_basis<word>* create_basis()
 
 template <class word> void compute_primitive_beta(cantor_basis<word>& c)
 {
-  static const int n = c_b_t<word>::n; // not equal to **sizeof(word) for boost types which are larger than the underlying bitfields
+  static const int n = c_b_t<word>::n; // not equal to sizeof(word) for boost types which are larger than the underlying bitfields
   if(n > 128) return;
   cout << "Primitive elements among beta family:" << endl;
   // primitive elements generate the field multiplicatively.
@@ -236,7 +228,7 @@ template <class word> double test_ref(cantor_basis<word>& c, word* values)
         cout << "Difference between multiply and multiply_ref for i=" << i << endl;
         cout << hex << m1 << endl;
         cout << hex << m2 << endl;
-        cout << endl;
+        cout << dec << endl;
       }
       else if(error_count == 5)
       {
@@ -261,7 +253,7 @@ template <class word> double test_ref(cantor_basis<word>& c, word* values)
         cout << "Difference between multiply_beta_repr and multiply_beta_repr_ref for i=" << i << endl;
         cout << hex << m3 << endl;
         cout << hex << m4 << endl;
-        cout << endl;
+        cout << dec << endl;
       }
       else if(error_count == 5)
       {
@@ -330,7 +322,7 @@ template <class word>
 double test(cantor_basis<word>* c_b, word* values)
 {
   time_point<high_resolution_clock> begin, end;
-
+  cout << " Multiplication / inverse test (gamma representation)" << endl;
   int errors = 0;
   // check that a * (1/a) = 1 for all test values a != 0
   for(size_t i = 0; i < n_vals; i++)
@@ -344,6 +336,7 @@ double test(cantor_basis<word>* c_b, word* values)
   word wres = 3;
   // compute beta_i**2 using gamma representation, convert it back to beta representation,
   // and check that beta_i**2 = beta_{i-1} + beta_i
+  cout << "Test of beta relations" << endl;
   for(size_t i = 1; i < c_b_t<word>::n; i++)
   {
     // w = beta_i in beta representation (i.e. 1 << i)
@@ -357,6 +350,7 @@ double test(cantor_basis<word>* c_b, word* values)
 
   if constexpr(c_b_t<word>::n ==32 || c_b_t<word>::n == 64)
   {
+    cout << "Test of agreement between multiplication in gamma and in multiplicative representation" << endl;
     errors = 0;
     for(size_t i = 0; i < n_vals - 1; i++)
     {
@@ -372,22 +366,27 @@ double test(cantor_basis<word>* c_b, word* values)
   }
 
   int repeat = 1024 / c_b_t<word>::n + 1;
-  word sum_2 = 0, sum3 = 0;
+  word sum_2 = 0, sum_3 = 0;
   int opt_repeat = 128;
   begin = high_resolution_clock::now();
   for(size_t i = 0; i < n_vals; i++) sum_2 += c_b->multiply(values[i], values[i+1]);
   for(int j = 0; j < opt_repeat * repeat - 1; j++)
   {
-    for(size_t i = 0; i < n_vals; i++) sum3 += c_b->multiply(values[i], values[i+1]);
+    for(size_t i = 0; i < n_vals; i++) sum_3 += c_b->multiply(values[i], values[i+1]);
   }
   end = high_resolution_clock::now();
   double t2 = static_cast<double>(duration_cast<chrono::nanoseconds>(end-begin).count()) / pow(10, 9);
-  if(sum_2 != target<word>::result) cout << "** ERROR: sum_2 differs from target **" << endl;
-  if(sum3 == 0) cout << "the impossible happened twice!" << endl; // to prevent the compiler from optimizing computations
+  if(!use_random_test_values)
+  {
+    if(sum_2 != target<word>::result)
+    {
+      cout << "** ERROR: sum_2 differs from target **" << endl;
+      cout << hex << " Expected: " << target<word>::result << " ; got " << sum_2 << dec << endl;
+    }
+    if(sum_3 == 0) cout << "the impossible happened twice!" << endl; // to prevent the compiler from optimizing computations
+  }
   cout << "optimized multiply time: " << t2 << "; per run: " << t2 / opt_repeat << endl;
-
   if constexpr(print_matrices) print_beta_dec_matrix(c_b);
-
   return t2 / opt_repeat;
 }
 
@@ -404,7 +403,7 @@ template <class word> word* create_values(function<word()> draw)
 
 template<class word> void full_test()
 {
-  cout << endl << endl << "Full test for words of size " << c_b_t<word>::n << " bits" << endl;
+  cout << "Full test for words of size " << c_b_t<word>::n << " bits" << endl;
   cantor_basis<word>* c_b = create_basis<word>();
   //FIXME: put engine, dist and draw in a templated class used to generate random or pseudorandom word values.
 
@@ -465,6 +464,7 @@ template<class word> void full_test()
   delete c_b;
   delete[] v;
 }
+
 void multiprecision_playground()
 {
 #ifdef Boost_FOUND
@@ -482,9 +482,12 @@ void multiprecision_playground()
   cout << "sizeof(uint128_t limb): " << sizeof(*y.backend().limbs()) << endl;
 
 #else
-  uint128_t y = 1;
-  y <<= 64;
-  cout << bitset<numeric_limits<typeof(y)>::digits>(y).count();
+  uint128_t y = 3;
+  y <<= 63;
+  // kept for reference, but fails (displays '1' and not '2', as the bit in the upper 64-bit half
+  // is lost), because y is converted to a 64-bit unsigned long long when passed to the bitset
+  // constructor. See https://en.cppreference.com/w/cpp/utility/bitset/bitset
+  cout << bitset<numeric_limits<remove_reference_t<decltype(y)>>::digits>(y).count() << endl;
 #endif
 }
 
