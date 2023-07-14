@@ -36,5 +36,11 @@
 CMakeLists.txt.user
 CMakeLists.txt.user.*
 
-#visual studio
+#visual studio code
 .vs/
+settings.json
+
+#clangd
+.cache/*
+
+build/*

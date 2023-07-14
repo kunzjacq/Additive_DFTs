@@ -5,6 +5,7 @@
 #include <cassert>
 #include <cstring> // for memcpy/memset/memcmp
 #include <immintrin.h>
+#include <memory>
 
 #include "helpers.hpp"
 #include "cantor.h"

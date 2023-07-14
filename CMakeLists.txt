@@ -5,6 +5,7 @@ project(additive_dfts)
 include(TestBigEndian)
 
 message("CMAKE_SYSTEM_NAME: ${CMAKE_SYSTEM_NAME}")
+set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 set(CMAKE_VERBOSE_MAKEFILE on)
 
 option(LTO "Link-time optimization" ON)

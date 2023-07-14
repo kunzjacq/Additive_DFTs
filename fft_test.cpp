@@ -1,10 +1,8 @@
-#include "finite_field.h"
 #include "additive_fft.h"
 #include "mateer_gao.h"
-#include "mg.h"
 #include "utils.h"
 #include "timer.h"
-#include "polynomial_product.h"
+#include "gf2_extension_polynomials.h"
 
 #include <iostream>
 #include <cstdio>

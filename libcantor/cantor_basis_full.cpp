@@ -5,6 +5,7 @@
 #include <cassert>
 #include <cstring> // for memcpy/memset/memcmp
 #include <cmath>
+#include <memory>
 
 #include "helpers.hpp"
 

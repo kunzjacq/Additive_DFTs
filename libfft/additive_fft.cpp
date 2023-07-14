@@ -8,6 +8,7 @@
 #include "utils.h"
 #include "interleave.h"
 
+#include "gf2_extension_polynomials.h"
 
 constexpr bool debug = false;
 

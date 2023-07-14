@@ -86,7 +86,7 @@ For target `fft_test`,
 ## Build instructions
 Under Linux, gcc or clang are able to build all targets. Under windows, MinGW gcc (for instance from MSYS2) can be used, whereas MSVC will only build a limited version of `product_test` that does not use `gf2x`. 
 
-The build process uses Cmake. For instance, an optimized build with gcc using a single-configuration generator such as make, in build directory $BUILD_DIR and source dir $SOURCE_DIR, is achieved with:
+The build process uses Cmake. For instance, an optimized build with gcc using a single-configuration generator such as make, in build directory \$BUILD_DIR and source dir \$SOURCE_DIR, is achieved with:
 
     cmake -S $SOURCE_DIR -B $BUILD_DIR -D CMAKE_BUILD_TYPE=Release
     cmake --build $BUILD_DIR --parallel

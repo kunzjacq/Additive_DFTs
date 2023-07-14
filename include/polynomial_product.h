@@ -1,6 +1,5 @@
 #pragma once
 
-#include "additive_fft.h"
 #include "mateer_gao.h"
 
 template <class word>
@@ -39,6 +38,7 @@ uint64_t binary_polynomial_to_words_mult_little_endian(uint8_t* p, word* res, ui
 }
 
 template<>
+inline
 uint64_t binary_polynomial_to_words_mult(uint8_t* p, uint8_t* res, uint64_t d, size_t fft_size)
 {
   constexpr int num_bits_half = 4;
@@ -55,6 +55,7 @@ uint64_t binary_polynomial_to_words_mult(uint8_t* p, uint8_t* res, uint64_t d, s
 }
 
 template<>
+inline
 uint64_t binary_polynomial_to_words_mult_little_endian(uint8_t* p, uint8_t* res, uint64_t d, size_t fft_size)
 {
   return binary_polynomial_to_words_mult<uint8_t>(p, res, d, fft_size);
@@ -109,6 +110,7 @@ void words_to_binary_polynomial_mult(word* buf, uint8_t* p, uint64_t d)
 
 
 template <>
+inline
 void words_to_binary_polynomial_mult(uint8_t* buf, uint8_t* p, uint64_t d)
 {
   constexpr unsigned int bits_per_word  = 4;
@@ -140,6 +142,7 @@ void words_to_binary_polynomial_mult(uint8_t* buf, uint8_t* p, uint64_t d)
 }
 
 template<>
+inline
 void words_to_binary_polynomial_mult_little_endian(uint8_t* buf, uint8_t* p, uint64_t d)
 {
   words_to_binary_polynomial_mult<uint8_t>(buf, p, d);

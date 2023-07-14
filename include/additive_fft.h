@@ -3,7 +3,6 @@
 #include <cstdint>
 
 #include "cantor.h"
-#include "gf2_extension_polynomials.h"
 
 template<class word>
 void interleave_quarter_buffer(word* buf, word* p_poly, int logsz);
