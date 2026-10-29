@@ -20,7 +20,7 @@ Both an in-place and a not-in-place product variant are provided. The in-place v
 
 ### Product computation time results
 
-Experiments on a PC with an AMD Ryzen 9 5950X CPU and 64GB of DDR4 RAM @1800MHz (3600 MT/s), with gf2x 1.3, are summarized below. Results are for the in-place product variant. The code was compiled with gcc using `-march=native` (which enables the 256-bit `vpclmulqdq` code path on this CPU). Each time is an average over repeated runs, which are timed in batches (a batch lasts at least 1 ms, and runs are repeated until 2 s have elapsed), as reading the clock takes about 25 ns, which is not negligible for the smallest sizes. The figures for u = 10...30 were obtained by running `product_test` with `gf2x_max_logsize = 30` and the size list set to u = 8...30; those for u = 31...35 were obtained with a previous version of `product_test` that timed each run (which makes no difference at these sizes). The raw numbers are in `2026-10-results_in_place.csv`. The 64GB of RAM do not allow the in-place product of size 2<sup>36</sup> to be computed.
+Experiments on a PC with an AMD Ryzen 9 5950X CPU and 64GB of DDR4 RAM @1800MHz (3600 MT/s), with gf2x 1.3, are summarized below. Results are for the in-place product variant. The code was compiled with gcc using `-march=native` (which enables the 256-bit `vpclmulqdq` code path on this CPU). Each time is an average over repeated runs, which are timed in batches (a batch lasts at least 1 ms, and runs are repeated until 2 s have elapsed), as reading the clock takes about 25 ns, which is not negligible for the smallest sizes. The figures for u = 10...30 were obtained by running `product_test` with `gf2x_max_logsize = 30` and the size list set to u = 8...30; those for u = 31...35 were obtained with a previous version of `product_test` that timed each run (which makes no difference at these sizes). The raw numbers are in `2026-10-results_in_place.csv`. Sizes above 2<sup>35</sup> were not measured (see the memory requirements below: the in-place product of size 2<sup>36</sup> needs 28 GiB, and that of size 2<sup>37</sup> needs 56 GiB, which is close to the 64GB available).
 
 |Output log2 size|gf2x product time (sec.)|Mateer-Gao product time (sec.)|
 |:----:|:----:|:----:|
@@ -57,7 +57,7 @@ Experiments on a PC with an AMD Ryzen 9 5950X CPU and 64GB of DDR4 RAM @1800MHz 
 
 ### Fused variant
 
-The plain product above (`libfft/mg.cpp`, `include/mg.h`) is a direct implementation of the Mateer-Gao algorithm. A second implementation, `libfft/mg_fused.cpp` (`include/mg_fused.h`, namespace `mg_fused`), has the same interface and gives the same results, but is 1.1 to 10 times faster (the largest gains are at the smallest sizes); it is a copy of `mg.cpp` that adds one optimization and leaves the original untouched.
+The plain product above (`libfft/mg.cpp`, `include/mg.h`) is a direct implementation of the Mateer-Gao algorithm. A second implementation, `libfft/mg_fused.cpp` (`include/mg_fused.h`, namespace `mg_fused`), has the same interface and gives the same results, but is 1.05 to 10 times faster (the largest gains are at the smallest sizes); it is a copy of `mg.cpp` that adds one optimization and leaves the original untouched.
 
 **Principle.** The DFT is computed recursively on a square array: the Taylor decomposition and DFTs on columns first, then DFTs on rows. In the product, the forward DFTs of both operands, the pointwise product and the first stages of the inverse DFT are chained, so at the end of the forward DFTs the rows are polynomials of degree < R (R = 4, 16 or 256 words) evaluated on a coset a + GF(R) of the subfield GF(R) of GF(2<sup>64</sup>), which is possible because the beta basis is a Cantor basis. For a row, "DFT of both operands, pointwise product, inverse DFT" is therefore just a product of two polynomials of degree < R modulo the polynomial vanishing on the coset, x<sup>R</sup> + x + c, with c = a<sup>R</sup> + a (c is already known to the DFT code: it is the offset of the next recursion level). The fused variant does not perform these DFT stages on rows of 16 words (4 words for the smallest sizes): it computes the product of the rows directly.
 
@@ -67,7 +67,7 @@ The plain product above (`libfft/mg.cpp`, `include/mg.h`) is a direct implementa
 
 **Use.** The functions of `mg_fused.h` are drop-in replacements for those of `mg.h`. `product_test` uses them if the constant `use_fused_variant` at the top of `product_test.cpp` is set to `true`. Both variants are tested by `degree_test` in `product_test`.
 
-**Results.** Same machine as above (AMD 5950X, in-place product, same measurement method; these are the same figures as the first two columns of the table above for the sizes in common). Plain and fused variants were measured in separate runs of `product_test` (for sizes up to 2<sup>20</sup>, the fused column was measured again after the base case was added), and the results of both variants are checked against gf2x at each size. For gf2x, the smallest of the measured times is given:
+**Results.** Same machine as above (AMD 5950X, in-place product, same measurement method; these are the same figures as the first two columns of the table above for the sizes in common). Plain and fused variants were measured in separate runs of `product_test` (for sizes up to 2<sup>20</sup>, the fused column was measured again after the base case was added), and the results of both variants are checked against gf2x at each size. For gf2x, the smallest of the measured times is given. For sizes 2<sup>31</sup> to 2<sup>35</sup>, only the fused variant was measured again (one run per size, in-place, with `use_fused_variant = true`); the gf2x and plain Mateer-Gao columns are those of the table above:
 
 |Output log2 size|gf2x (sec.)|Mateer-Gao (sec.)|fused Mateer-Gao (sec.)|speedup of fused over plain|speed ratio fused / gf2x|
 |:----:|:----:|:----:|:----:|:----:|:----:|
@@ -94,18 +94,35 @@ The plain product above (`libfft/mg.cpp`, `include/mg.h`) is a direct implementa
 |28| 0.9148| 0.3017| 0.2563| 1.18| 3.57|
 |29| 2.449| 0.6817| 0.5878| 1.16| 4.17|
 |30| 3.67| 1.484| 1.297| 1.14| 2.83|
+|31| 9.827| 3.221| 2.987| 1.08| 3.29|
+|32| 22.11| 7.256| 6.718| 1.08| 3.29|
+|33| 87.79| 15.9| 15.08| 1.05| 5.82|
+|34| 133.1| 35.14| 33.2| 1.06| 4.01|
+|35| 574.1| 76.79| 72.86| 1.05| 7.88|
 
-The fused variant is 8 to 11 times faster than the plain one up to 2<sup>10</sup> bits, thanks to the base case, 2 to 6 times faster from 2<sup>11</sup> to 2<sup>14</sup>, 1.4 times faster at 2<sup>15</sup> to 2<sup>16</sup>, and the advantage then decreases from 1.3x at 2<sup>20</sup> to 1.1 - 1.2x at 2<sup>28</sup> to 2<sup>30</sup>, where the last DFT stages weigh less. The fused variant overtakes gf2x at output size 2<sup>16</sup> (2<sup>18</sup> for the plain variant). Below this size gf2x is faster, by a factor of 1.3 to 1.8 for 2<sup>8</sup> to 2<sup>15</sup>.
+The fused variant is 8 to 11 times faster than the plain one up to 2<sup>10</sup> bits, thanks to the base case, 2 to 6 times faster from 2<sup>11</sup> to 2<sup>14</sup>, 1.4 times faster at 2<sup>15</sup> to 2<sup>16</sup>, and the advantage then decreases from 1.3x at 2<sup>20</sup> to 1.1 - 1.2x at 2<sup>28</sup> to 2<sup>30</sup> and 1.05 - 1.08x from 2<sup>31</sup> to 2<sup>35</sup>, where the last DFT stages weigh little. The fused variant overtakes gf2x at output size 2<sup>16</sup> (2<sup>18</sup> for the plain variant). Below this size gf2x is faster, by a factor of 1.3 to 1.8 for 2<sup>8</sup> to 2<sup>15</sup>.
 
 ### Product memory requirements
 
-Assume that a product q = p<sub>1</sub> p<sub>2</sub> is computed, and that the storage of p<sub>1</sub> and p<sub>2</sub> uses n bytes, 2<sup>k-1</sup> < n ≤ 2<sup>k</sup> = m. Then the storage of q also uses at most n bytes. 
+The functions of `mg.h` and `mg_fused.h` have the same memory requirements (the base case of the fused variant, for small products, only uses a few tens of KB of stack).
 
-Besides the buffer to store the inputs and the result, the out-of-place Mateer-Gao product function uses buffers of size 4m. Overall, it therefore needs M = 2n + 4m RAM bytes, 5m < M ≤ 6m.
+**Notations.** A product q = p<sub>1</sub> p<sub>2</sub> is computed, where the storage of p<sub>1</sub> and p<sub>2</sub> together uses n bytes (one bit per coefficient). The storage of q is then at most n bytes. Let m be the smallest power of 2 such that n ≤ m, i.e. 2<sup>k-1</sup> < n ≤ 2<sup>k</sup> = m. The DFTs are computed on arrays of 64-bit words holding 32 bits of the polynomial each, so the array that holds the DFT of a polynomial of the size of q uses twice the size of q, rounded up to a power of 2, i.e. 2m bytes.
 
-The in-place variant stores the result q into the input buffer for p<sub>1</sub>. This array must be of size 2m; an additional buffer twice the storage size of p<sub>2</sub>, rounded to the next power of two, is allocated. Exchanging p<sub>1</sub> and p<sub>2</sub> if necessary, we have that deg(p<sub>2</sub>) ≤ deg(p<sub>1</sub>). Then the storage size for p<sub>2</sub> is ≤ m/2, and the in-place product function uses at most m/2 + 2m + 2\* m/2 = 3.5m bytes of RAM, which is much better than the out-of-place function.
+**Out-of-place variant** (`mg_binary_polynomial_multiply`). The function allocates two arrays of 2m bytes (one DFT array per operand), in addition to the buffers that store p<sub>1</sub>, p<sub>2</sub> and q (n bytes for p<sub>1</sub> and p<sub>2</sub>, at most n bytes for q). In total, M = 2n + 4m bytes of RAM are needed, with 5m < M ≤ 6m.
 
-As an example, when processing the largest example above, i.e. a product of two polynomials of degree 2<sup>36</sup>-1, each input polynomial is 8GB, and the result is 16GB. With the out-of-place variant, a buffer of size 4 \* 16GB = 64GB is additionally needed, for a total of 96GB. With the in-place variant, the buffer size for the result must be 2 \* 16GB = 32GB; an additional buffer of size 2 \* 8GB = 16GB is needed. Overall 8+16+32GB = 56GB of RAM are needed.
+**In-place variant** (`mg_binary_polynomial_multiply_in_place`). The result q is stored into the buffer of p<sub>1</sub>, which must be large enough to hold the DFT: 2m bytes. The buffer of p<sub>2</sub> is modified, and the function allocates an additional array to compute the DFT of p<sub>2</sub> (by blocks), of twice the size of p<sub>2</sub> rounded up to a power of 2. Exchanging p<sub>1</sub> and p<sub>2</sub> if necessary, we can assume deg(p<sub>2</sub>) ≤ deg(p<sub>1</sub>); the size of p<sub>2</sub> is then at most m/2 bytes. The in-place product therefore needs at most m/2 (p<sub>2</sub>) + 2m (p<sub>1</sub> and q) + 2 × m/2 (additional array) = 3.5m bytes of RAM, which is much less than the out-of-place variant (up to 6m).
+
+**Example.** The memory used by a product of two polynomials of 2<sup>u-1</sup> bits, whose result has 2<sup>u</sup> bits (the sizes of the tables above), is, in GiB (1 GiB = 2<sup>30</sup> bytes; here n = m = 2<sup>u-3</sup> bytes):
+
+|Output log2 size u|input (p<sub>1</sub> or p<sub>2</sub>)|result q|in-place variant (3.5m)|out-of-place variant (6m)|
+|:----:|:----:|:----:|:----:|:----:|
+|32|0.25|0.5|1.75|3|
+|33|0.5|1|3.5|6|
+|35|2|4|14|24|
+|36|4|8|28|48|
+|37|8|16|56|96|
+
+For u = 37, i.e. a product of two polynomials of degree 2<sup>36</sup>-1, each input polynomial is 8 GiB and the result is 16 GiB. With the out-of-place variant, buffers of 2 × 2 × 16 GiB = 64 GiB are additionally needed, for a total of 96 GiB. With the in-place variant, the buffer for p<sub>1</sub> and the result is 2 × 16 GiB = 32 GiB, p<sub>2</sub> takes 8 GiB, and an additional array of 2 × 8 GiB = 16 GiB is needed. Overall 8 + 16 + 32 = 56 GiB of RAM are needed.
 
 ### Product CPU requirements
 
