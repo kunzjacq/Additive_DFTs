@@ -211,9 +211,13 @@ int main(int UNUSED(argc), char** UNUSED(argv))
   //unsigned int log_sz[] = {8};
   cpu_features f;
   bool cpu_has_required_flags = f.has_popcnt && f.has_bmi1 && f.has_avx2 && f.has_pclmul;
+#if defined(__VPCLMULQDQ__) && defined(__AVX2__)
+  // the build targets VPCLMULQDQ (see MG_USE_YMM_CLMUL in mg_templates.h)
+  cpu_has_required_flags = cpu_has_required_flags && f.has_vpclmul;
+#endif
   if(!cpu_has_required_flags)
   {
-    cout << "cpu flags required not present (AVX2, PCMULQDQ, POPCNT, BMI1). Exiting" << endl;
+    cout << "cpu flags required not present (AVX2, PCMULQDQ, POPCNT, BMI1, and VPCLMULQDQ if the build targets it). Exiting" << endl;
     exit(2);
   }
   unsigned int num_sz = sizeof(log_sz) / sizeof(unsigned int);

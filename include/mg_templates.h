@@ -58,7 +58,7 @@
  * a pointer to the array containing the interleaved polynomials.
  */
 template<bool reverse, int logstride>
-static inline void eval_degree1(const uint64_t val,  uint64_t* restr pu)
+static inline void eval_degree1_ref(const uint64_t val,  uint64_t* restr pu)
 {
   uint64_t* restr p = (uint64_t*) std::assume_aligned<16>(pu);
 
@@ -501,6 +501,161 @@ static inline void eval_degree1(const uint64_t val,  uint64_t* restr pu)
     }
   }
 
+#endif
+}
+
+
+// Optimized eval_degree1 kernels.
+// - The reduction of the 128-bit product modulo the field polynomial uses one carry-less
+//   multiplication and a table lookup (see below) instead of two carry-less multiplications.
+// - If the compiler targets VPCLMULQDQ and AVX2 (e.g. -march=native on a CPU that has them),
+//   the wide-stride kernels (logstride >= 2) use 256-bit carry-less multiplications, i.e. two
+//   field products per instruction.
+// Define MG_USE_REF_EVAL_DEGREE1 to use the simple reference kernel eval_degree1_ref instead.
+#if defined(__VPCLMULQDQ__) && defined(__AVX2__)
+#define MG_USE_YMM_CLMUL
+#endif
+// Reduction of the 128-bit product (hi:lo) mod x^64 + x^4 + x^3 + x + 1 (m = 0x1b):
+//   hi*m is 68 bits: low 64 bits h0 and a 4-bit spill h1 (< 16);  result = lo ^ h0 ^ (h1*m)
+//   h1*m depends on a nibble only: 16-entry table, applied with pshufb instead of a 3rd clmul.
+static inline __m128i mg_lut128()
+{
+  return _mm_setr_epi8(0, 27, 54, 45, 108, 119, 90, 65, 216, 195, 238, 245, 180, 175, 130, 153);
+}
+
+template<bool reverse, int logstride>
+static inline void eval_degree1_new(const uint64_t val, uint64_t* restr pu)
+{
+  uint64_t* restr p = (uint64_t*) std::assume_aligned<16>(pu);
+  constexpr uint64_t minpoly = 0x1b;
+  const __m128i xa  = _mm_set_epi64x(minpoly, val);
+  const __m128i lut = mg_lut128();
+  if constexpr(logstride == 0)
+  {
+    if constexpr(reverse) p[1] ^= p[0];
+    __m128i xb = _mm_set1_epi64x(p[1]);
+    xb = _mm_clmulepi64_si128(xa, xb, 0x00);
+    __m128i xc = _mm_clmulepi64_si128(xa, xb, 0x11);
+    xb = _mm_xor_si128(xb, xc);
+    xc = _mm_srli_si128(_mm_shuffle_epi8(lut, xc), 8);
+    xb = _mm_xor_si128(xb, xc);
+    p[0] ^= _mm_cvtsi128_si64(xb);
+    if constexpr(!reverse) p[1] ^= p[0];
+  }
+  else if constexpr(logstride == 1)
+  {
+    __m128i P = _mm_load_si128((__m128i*)(p));
+    __m128i Q = _mm_load_si128((__m128i*)(p) + 1);
+    if constexpr(reverse)
+    {
+      Q = _mm_xor_si128(Q, P);
+      _mm_store_si128((__m128i*)(p) + 1, Q);
+    }
+    __m128i e  = _mm_clmulepi64_si128(xa, Q, 0x00);
+    __m128i o  = _mm_clmulepi64_si128(xa, Q, 0x10);
+    __m128i xe = _mm_clmulepi64_si128(xa, e, 0x11);
+    __m128i xo = _mm_clmulepi64_si128(xa, o, 0x11);
+    e = _mm_xor_si128(e, xe);
+    o = _mm_xor_si128(o, xo);
+    __m128i r = _mm_xor_si128(_mm_unpacklo_epi64(e, o),
+                              _mm_unpackhi_epi64(_mm_shuffle_epi8(lut, xe), _mm_shuffle_epi8(lut, xo)));
+    P = _mm_xor_si128(P, r);
+    _mm_store_si128((__m128i*)(p), P);
+    if constexpr(!reverse)
+    {
+      Q = _mm_xor_si128(Q, P);
+      _mm_store_si128((__m128i*)(p) + 1, Q);
+    }
+  }
+  else
+  {
+    constexpr uint64_t stride = 1uLL << logstride;
+    uint64_t* restr q = p + stride;
+#ifdef MG_USE_YMM_CLMUL
+    const __m256i xa2  = _mm256_broadcastsi128_si256(xa);
+    const __m256i lut2 = _mm256_broadcastsi128_si256(lut);
+    constexpr int U = (logstride >= 3) ? 2 : 1; // 256-bit vectors (4 elements each) per iteration
+    for(uint64_t i = 0; i < stride; i += 4 * U)
+    {
+      __m256i P[U], Q[U];
+      for(int u = 0; u < U; u++)
+      {
+        P[u] = _mm256_loadu_si256((__m256i*)(p + 4*u));
+        Q[u] = _mm256_loadu_si256((__m256i*)(q + 4*u));
+        if constexpr(reverse)
+        {
+          Q[u] = _mm256_xor_si256(Q[u], P[u]);
+          _mm256_storeu_si256((__m256i*)(q + 4*u), Q[u]);
+        }
+      }
+      for(int u = 0; u < U; u++)
+      {
+        __m256i e  = _mm256_clmulepi64_epi128(xa2, Q[u], 0x00);
+        __m256i o  = _mm256_clmulepi64_epi128(xa2, Q[u], 0x10);
+        __m256i xe = _mm256_clmulepi64_epi128(xa2, e, 0x11);
+        __m256i xo = _mm256_clmulepi64_epi128(xa2, o, 0x11);
+        e = _mm256_xor_si256(e, xe);
+        o = _mm256_xor_si256(o, xo);
+        __m256i r = _mm256_xor_si256(_mm256_unpacklo_epi64(e, o),
+                      _mm256_unpackhi_epi64(_mm256_shuffle_epi8(lut2, xe), _mm256_shuffle_epi8(lut2, xo)));
+        P[u] = _mm256_xor_si256(P[u], r);
+        _mm256_storeu_si256((__m256i*)(p + 4*u), P[u]);
+        if constexpr(!reverse)
+        {
+          Q[u] = _mm256_xor_si256(Q[u], P[u]);
+          _mm256_storeu_si256((__m256i*)(q + 4*u), Q[u]);
+        }
+      }
+      p += 4 * U;
+      q += 4 * U;
+    }
+#else
+    for(uint64_t i = 0; i < stride; i += 4)
+    {
+      __m128i P0 = _mm_load_si128((__m128i*)(p)),     P1 = _mm_load_si128((__m128i*)(p) + 1);
+      __m128i Q0 = _mm_load_si128((__m128i*)(q)),     Q1 = _mm_load_si128((__m128i*)(q) + 1);
+      if constexpr(reverse)
+      {
+        Q0 = _mm_xor_si128(Q0, P0);
+        Q1 = _mm_xor_si128(Q1, P1);
+        _mm_store_si128((__m128i*)(q),     Q0);
+        _mm_store_si128((__m128i*)(q) + 1, Q1);
+      }
+      __m128i e0 = _mm_clmulepi64_si128(xa, Q0, 0x00), o0 = _mm_clmulepi64_si128(xa, Q0, 0x10);
+      __m128i e1 = _mm_clmulepi64_si128(xa, Q1, 0x00), o1 = _mm_clmulepi64_si128(xa, Q1, 0x10);
+      __m128i xe0 = _mm_clmulepi64_si128(xa, e0, 0x11), xo0 = _mm_clmulepi64_si128(xa, o0, 0x11);
+      __m128i xe1 = _mm_clmulepi64_si128(xa, e1, 0x11), xo1 = _mm_clmulepi64_si128(xa, o1, 0x11);
+      e0 = _mm_xor_si128(e0, xe0); o0 = _mm_xor_si128(o0, xo0);
+      e1 = _mm_xor_si128(e1, xe1); o1 = _mm_xor_si128(o1, xo1);
+      __m128i r0 = _mm_xor_si128(_mm_unpacklo_epi64(e0, o0),
+                     _mm_unpackhi_epi64(_mm_shuffle_epi8(lut, xe0), _mm_shuffle_epi8(lut, xo0)));
+      __m128i r1 = _mm_xor_si128(_mm_unpacklo_epi64(e1, o1),
+                     _mm_unpackhi_epi64(_mm_shuffle_epi8(lut, xe1), _mm_shuffle_epi8(lut, xo1)));
+      P0 = _mm_xor_si128(P0, r0);
+      P1 = _mm_xor_si128(P1, r1);
+      _mm_store_si128((__m128i*)(p),     P0);
+      _mm_store_si128((__m128i*)(p) + 1, P1);
+      if constexpr(!reverse)
+      {
+        Q0 = _mm_xor_si128(Q0, P0);
+        Q1 = _mm_xor_si128(Q1, P1);
+        _mm_store_si128((__m128i*)(q),     Q0);
+        _mm_store_si128((__m128i*)(q) + 1, Q1);
+      }
+      p += 4;
+      q += 4;
+    }
+#endif
+  }
+}
+
+template<bool reverse, int logstride>
+static inline void eval_degree1(const uint64_t val, uint64_t* restr pu)
+{
+#ifdef MG_USE_REF_EVAL_DEGREE1
+  eval_degree1_ref<reverse, logstride>(val, pu);
+#else
+  eval_degree1_new<reverse, logstride>(val, pu);
 #endif
 }
 

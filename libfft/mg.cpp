@@ -146,10 +146,8 @@ static inline uint64_t product(const uint64_t&a, const uint64_t&b)
   // g**64 × xb_1 = minpoly × xb_1 as values in GF(2**64) (since p(g) = g**64 ^ minpoly = 0)
   // minpoly * xb_1 is a 68-bit value
   xb = _mm_xor_si128(xb, xc); // xb = xb ^ xc (the result is accumulated in xb_0)
-  xc = _mm_clmulepi64_si128(xa, xc, 0x11); // xc = xc_1 * minpoly
-  // g**64 × xc_1 = minpoly × xc_1  as values in GF(2**64)
-  // minpoly * xc_1 is a 8-bit value, therefore after computatin, xc_1 = 0
-  // and the result is xb_0 ^ xc_0
+  // xc_1 < 16: minpoly * xc_1 is read from a 16-entry table (pshufb) instead of a third clmul
+  xc = _mm_srli_si128(_mm_shuffle_epi8(mg_lut128(), xc), 8);
   xb = _mm_xor_si128(xb, xc); // xb = xb ^ xc
   return _mm_extract_epi64(xb, 0); // return xb_0
 }
@@ -199,6 +197,32 @@ static void product_batch(uint64_t* restr a_ptru, uint64_t* restr b_ptru, unsign
 
   assert(logsize >= 2);
   const uint64_t sz = 1uLL << (logsize - 2);
+#ifdef MG_USE_YMM_CLMUL
+  // 4 products per iteration, 2 per 128-bit lane; same reduction as eval_degree1_new
+  {
+    constexpr uint64_t minpoly = 0x1b;
+    const __m256i xp  = _mm256_set1_epi64x(minpoly);
+    const __m128i lut128 = mg_lut128();
+    const __m256i lut = _mm256_broadcastsi128_si256(lut128);
+    __m256i* restr a256 = (__m256i*) a_ptru;
+    const __m256i* restr b256 = (const __m256i*) b_ptru;
+    for(uint64_t i = 0; i < sz; i++)
+    {
+      const __m256i xa = _mm256_loadu_si256(a256 + i);
+      const __m256i xb = _mm256_loadu_si256(b256 + i);
+      __m256i e  = _mm256_clmulepi64_epi128(xa, xb, 0x00);
+      __m256i o  = _mm256_clmulepi64_epi128(xa, xb, 0x11);
+      __m256i xe = _mm256_clmulepi64_epi128(e, xp, 0x01);
+      __m256i xo = _mm256_clmulepi64_epi128(o, xp, 0x01);
+      e = _mm256_xor_si256(e, xe);
+      o = _mm256_xor_si256(o, xo);
+      __m256i r = _mm256_xor_si256(_mm256_unpacklo_epi64(e, o),
+          _mm256_unpackhi_epi64(_mm256_shuffle_epi8(lut, xe), _mm256_shuffle_epi8(lut, xo)));
+      _mm256_storeu_si256(a256 + i, r);
+    }
+    return;
+  }
+#endif
 
   constexpr uint64_t minpoly = 0x1b;
   __m128i xp, xa1, xa2, xa3, xa4, xb1, xb2, xb3, xb4, xc1, xc2, xc3, xc4;
@@ -253,6 +277,88 @@ static void product_batch(uint64_t* restr a_ptru, uint64_t* restr b_ptru, unsign
   }
 }
 
+
+#ifndef MG_ROW4
+#define MG_ROW4 1
+#endif
+// ---- register-resident kernels for rows of 4 words (s = 1, logsize = 2, logstride = 0)
+// (valA * Q.lo, valB * Q.hi style helpers; xa* = (minpoly : val); reduction as in eval_degree1_new)
+static inline __m128i mg_mul_vec2(__m128i xa, __m128i Q, __m128i lut)
+{
+  __m128i e  = _mm_clmulepi64_si128(xa, Q, 0x00);
+  __m128i o  = _mm_clmulepi64_si128(xa, Q, 0x10);
+  __m128i xe = _mm_clmulepi64_si128(xa, e, 0x11);
+  __m128i xo = _mm_clmulepi64_si128(xa, o, 0x11);
+  e = _mm_xor_si128(e, xe);
+  o = _mm_xor_si128(o, xo);
+  return _mm_xor_si128(_mm_unpacklo_epi64(e, o),
+                       _mm_unpackhi_epi64(_mm_shuffle_epi8(lut, xe), _mm_shuffle_epi8(lut, xo)));
+}
+
+// (valA * SA[immA], valB * SB[immB]) with immA, immB in {0x00 (low qword), 0x10 (high qword)}
+template<int immA, int immB>
+static inline __m128i mg_mul_pair(__m128i xaA, __m128i xaB, __m128i SA, __m128i SB, __m128i lut)
+{
+  __m128i m0 = _mm_clmulepi64_si128(xaA, SA, immA);
+  __m128i m1 = _mm_clmulepi64_si128(xaB, SB, immB);
+  __m128i x0 = _mm_clmulepi64_si128(xaA, m0, 0x11);
+  __m128i x1 = _mm_clmulepi64_si128(xaB, m1, 0x11);
+  m0 = _mm_xor_si128(m0, x0);
+  m1 = _mm_xor_si128(m1, x1);
+  return _mm_xor_si128(_mm_unpacklo_epi64(m0, m1),
+                       _mm_unpackhi_epi64(_mm_shuffle_epi8(lut, x0), _mm_shuffle_epi8(lut, x1)));
+}
+
+template<bool taylor>
+static inline void mg_row4_forward(uint64_t* restr pu, const uint64_t* offsets_mult)
+{
+  uint64_t* restr p = (uint64_t*) std::assume_aligned<16>(pu);
+  constexpr uint64_t minpoly = 0x1b;
+  const uint64_t valA = offsets_mult[0];
+  const uint64_t c1   = offsets_mult[1];
+  const uint64_t valB = valA ^ beta_over_mult_cumulative[2] ^ beta_over_mult_cumulative[1];
+  const __m128i lut = mg_lut128();
+  __m128i A = _mm_load_si128((__m128i*)(p));
+  __m128i B = _mm_load_si128((__m128i*)(p) + 1);
+  if constexpr(taylor)
+  {
+    B = _mm_xor_si128(B, _mm_srli_si128(B, 8));  // (w2^w3, w3)
+    A = _mm_xor_si128(A, _mm_slli_si128(B, 8));  // (w0, w1^w2^w3)
+  }
+  __m128i U = _mm_xor_si128(A, mg_mul_vec2(_mm_set_epi64x(minpoly, c1), B, lut));
+  __m128i V = _mm_xor_si128(B, U);
+  __m128i R = mg_mul_pair<0x10, 0x10>(_mm_set_epi64x(minpoly, valA), _mm_set_epi64x(minpoly, valB), U, V, lut);
+  __m128i W = _mm_xor_si128(_mm_unpacklo_epi64(U, V), R);
+  __m128i X = _mm_xor_si128(_mm_unpackhi_epi64(U, V), W);
+  _mm_store_si128((__m128i*)(p),     _mm_unpacklo_epi64(W, X));
+  _mm_store_si128((__m128i*)(p) + 1, _mm_unpackhi_epi64(W, X));
+}
+
+static inline void mg_row4_reverse(uint64_t* restr pu, const uint64_t* offsets_mult)
+{
+  uint64_t* restr p = (uint64_t*) std::assume_aligned<16>(pu);
+  constexpr uint64_t minpoly = 0x1b;
+  const uint64_t valA = offsets_mult[0];
+  const uint64_t c1   = offsets_mult[1];
+  const uint64_t valB = valA ^ beta_over_mult_cumulative[2] ^ beta_over_mult_cumulative[1];
+  const __m128i lut = mg_lut128();
+  __m128i A = _mm_load_si128((__m128i*)(p));
+  __m128i B = _mm_load_si128((__m128i*)(p) + 1);
+  __m128i W = _mm_unpacklo_epi64(A, B);
+  __m128i X = _mm_unpackhi_epi64(A, B);
+  X = _mm_xor_si128(X, W);
+  __m128i R = mg_mul_pair<0x00, 0x10>(_mm_set_epi64x(minpoly, valA), _mm_set_epi64x(minpoly, valB), X, X, lut);
+  W = _mm_xor_si128(W, R);
+  __m128i U = _mm_unpacklo_epi64(W, X);
+  __m128i V = _mm_unpackhi_epi64(W, X);
+  V = _mm_xor_si128(V, U);
+  U = _mm_xor_si128(U, mg_mul_vec2(_mm_set_epi64x(minpoly, c1), V, lut));
+  U = _mm_xor_si128(U, _mm_slli_si128(V, 8));
+  V = _mm_xor_si128(V, _mm_srli_si128(V, 8));
+  _mm_store_si128((__m128i*)(p),     U);
+  _mm_store_si128((__m128i*)(p) + 1, V);
+}
+
 /**
   @brief mg_core
  * computes the 2**logsize first values of 2**logstride interleaved polynomials given on input,
@@ -293,6 +399,20 @@ inline void mg_core(
   {
     eval_degree1<false, logstride>(offsets_mult[0], poly);
   }
+#if MG_ROW4
+  else if constexpr(s == 1 && logstride == 0)
+  {
+    if(logsize == 2)
+    {
+      if(first_taylor_done) mg_row4_forward<false>(poly, offsets_mult);
+      else                  mg_row4_forward<true>(poly, offsets_mult);
+    }
+    else
+    {
+      mg_core<0, 0>(poly, offsets_mult, logsize, first_taylor_done);
+    }
+  }
+#endif
   else
   {
     constexpr unsigned int t = 1 << (s - 1);
@@ -500,6 +620,13 @@ void mg_reverse_core(
   {
     eval_degree1<true, logstride>(offsets_mult[0], poly);
   }
+#if MG_ROW4
+  else if constexpr(s == 1 && logstride == 0)
+  {
+    if(logsize == 2) mg_row4_reverse(poly, offsets_mult);
+    else             mg_reverse_core<0, 0>(poly, offsets_mult, logsize);
+  }
+#endif
   else
   {
     constexpr unsigned int t = 1 << (s - 1);
