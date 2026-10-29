@@ -118,6 +118,7 @@ static void contract(uint64_t* dest, uint64_t* source, uint64_t d)
   {
     dest32[i] = source32[2*i - 1] ^ source32[2*i];
   }
+  if(num_dwords & 1) dest32[num_dwords] = 0; // clear the upper half of the last 64-bit word of the result
 }
 
 /**
@@ -695,6 +696,12 @@ void mg_binary_polynomial_multiply(uint64_t* p1, uint64_t* p2, uint64_t* result,
   // size of p2, in 32-bit words.
   unsigned int logsize_2 = 0;
   while((1uLL << logsize_2) * 32 < (d2 + 1)) logsize_2++;
+  // operands of at most 2 32-bit words are handled as 4-word polynomials unless the result is small
+  if(logsize_result >= 2)
+  {
+    logsize_1 = max(logsize_1, 2u);
+    logsize_2 = max(logsize_2, 2u);
+  }
   mg_smalldegree<s>(b1, logsize_1, logsize_result);
   mg_smalldegree<s>(b2, logsize_2, logsize_result);
   if(logsize_result < 2)
@@ -728,7 +735,24 @@ void mg_binary_polynomial_multiply_in_place (uint64_t* p1, uint64_t* p2, uint64_
   while((1uLL << logsize_2) * 32 < (d2 + 1)) logsize_2++;
 
   const uint64_t sz_result = 1uLL << logsize_result;
+  if(logsize_result < 2)
+  {
+    // the result has at most 64 bits: a single carry-less product
+    __m128i x = _mm_clmulepi64_si128(_mm_cvtsi64_si128((long long) p1[0]), _mm_cvtsi64_si128((long long) p2[0]), 0);
+    p1[0] = (uint64_t) _mm_cvtsi128_si64(x);
+    return;
+  }
   expand(p1, p1, d1, sz_result);
+  // operands of at most 2 32-bit words are handled as 4-word polynomials
+  logsize_1 = max(logsize_1, 2u);
+  uint64_t small_p2[2] = {0, 0};
+  if(logsize_2 < 2)
+  {
+    // p2 may not have room for 4 32-bit words: work on a copy
+    small_p2[0] = p2[0];
+    p2 = small_p2;
+    logsize_2 = 2;
+  }
   mg_smalldegree<s>((uint64_t*) p1, logsize_1, logsize_result);
   mg_smalldegree_with_buf<s>(p2, logsize_2, logsize_result, p1);
   mg_reverse_core<s,0>(p1, offsets_mult, logsize_result);
