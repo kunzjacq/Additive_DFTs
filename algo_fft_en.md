@@ -180,7 +180,7 @@ If $\eta = 2$ ($s = 0$), a direct computation is performed: for $f = f_{0} + f_{
 
 Otherwise, $s > 0$. The following steps are followed:
 
-1) Taylor decomposition of $f$ w.r.t. $X^{\tau} + X$, $\tau = 2^t = \sqrt{\eta}$:
+1) Taylor decomposition of $f$ w.r.t. $X^{\tau} + X$, $\tau = 2^t = \sqrt{\eta}$ (computed with additions only, see the section "Taylor decomposition" below):
 $f(X) = \sum_{i<\tau} f_i(X) (X^{\tau} + X)^i$ with $\deg f_i < \tau$, that is
 $f(X) = g(X, X^{\tau}+X)$ with
 $$g(X,Y) = \sum_{i < \tau} f_i(X) Y^i = \sum_{i < \tau, k < \tau} f_{i,k} \ X^k Y^i,$$
@@ -236,7 +236,57 @@ void dft(uint64_t* poly, int s, uint64_t j, unsigned int logstride)
 
 The main implementation difficulty is to ensure simultaneously a good performance for the multiplication in $\mathbb{F}$ (function `multiply`) and for the evaluation of $j\mapsto \omega_j$ (function `omega`). Computing directly in basis $\beta$ can be tempting (`omega` reduces to the identity in this case), but prevents a very efficient implementation of the product; furthermore, uses of the DFT may require to use a specific basis.
 
-`decompose_taylor` is not shown here but the algorithm is described in [1]. Interestingly, it can be implemented recursively or iteratively, and for a similar implementation effort, the recursive implementation exhibits better memory locality and is faster (in addition to being much simpler).
+`decompose_taylor` is described in the next section (see also [1]). Interestingly, it can be implemented recursively or iteratively, and for a similar implementation effort, the recursive implementation exhibits better memory locality and is faster (in addition to being much simpler).
+
+### Taylor decomposition
+
+The decomposition of step 1 of the algorithm is described first mathematically, then as it is implemented.
+
+#### Mathematical description
+
+Let $\tau = 2^t$ and $Y = X^\tau + X$. Let $n$ be a power of 2 with $n > \tau$, and $f$ a polynomial of degree $<n$. (In the DFT, $n = \eta = 2^{2t} = \tau^2$, or a smaller power of 2 greater than $\tau$ if only a truncated DFT is computed.) We want the polynomials $f_i$, $i < n/\tau$, such that
+$$f = \sum_{i < n/\tau} f_i(X) \, Y^i, \qquad \deg f_i < \tau.$$
+Such a decomposition exists and is unique: it is obtained by repeated Euclidean division by $Y$, which has degree $\tau$ (equivalently, the $X^j Y^i$, $j<\tau$, $i<n/\tau$, form a basis of the polynomials of degree $<n$).
+
+**Key identity.** Let $m = n/2$ and $\delta = m/\tau$ (a power of 2, $\delta \geq 1$). Since $\delta$ is a power of 2, the Frobenius map gives
+$$Y^\delta = (X^\tau + X)^\delta = X^{\tau\delta} + X^\delta = X^m + X^\delta,$$
+i.e. $X^m = Y^\delta + X^\delta$.
+
+**Splitting $f$ in two polynomials of half the size.** Write $f = f_{hi} X^m + f_c$, where $f_c$ consists of the $m$ lower coefficients of $f$, and $f_{hi} = f_a X^{m-\delta} + f_b$, where $f_a$ consists of the $\delta$ highest coefficients of $f$ ($\deg f_a < \delta$, $\deg f_b < m - \delta$). Replacing $X^m$ by $Y^\delta + X^\delta$ in $f_{hi} X^m$, and then in the term $f_a X^m$ that appears in $f_{hi} X^\delta = f_a X^m + f_b X^\delta$, gives
+
+$$f = u \, Y^\delta + v, \qquad u = f_a X^{m-\delta} + f_b + f_a, \qquad v = (f_a + f_b) X^\delta + f_c.$$
+
+$u$ and $v$ have degree $<m$, because $\tau \geq 2$ implies $2\delta \leq m$.
+
+**Recursion.** $u$ and $v$ have degree $< m = \tau\delta$ and are decomposed in the same way, independently: $v = \sum_{i<\delta} v_i Y^i$ and $u = \sum_{i<\delta} u_i Y^i$ with $\deg u_i, \deg v_i < \tau$. Then
+$$f = \sum_{i<\delta} v_i Y^i + \sum_{i<\delta} u_i Y^{i+\delta},$$
+which is the decomposition of $f$: the $f_i$ are the $v_i$ for $i < \delta$ and the $u_{i-\delta}$ for $i \geq \delta$. The recursion stops when the polynomials have degree $<\tau$ (nothing to do: $f = f_0$). It has $\log_2(n/\tau)$ levels.
+
+**Inverse.** The map $f \mapsto (f_i)_i$ is linear and invertible (it is a change of basis). The inverse is computed by the same recursion in reverse order: recompose $u$ and $v$ from their decompositions, then $f = u\,Y^\delta + v$ by inverting the formulas above ($f_a$, $f_b$ and $f_c$ are recovered from $u$ and $v$ by additions: $f_a$ consists of the $\delta$ highest coefficients of $u$, $f_b$ is the sum of $f_a$ and of the $m-\delta$ lowest coefficients of $u$, and $f_c = v + (f_a + f_b) X^\delta$).
+
+**Example**, for $\tau = 2$, $n=4$, $\delta = 1$: $f = c_0 + c_1 X + c_2 X^2 + c_3 X^3$, $f_a = c_3$, $f_b = c_2$, $f_c = c_0 + c_1 X$, so $u = c_3 X + c_2 + c_3$ and $v = (c_2 + c_3) X + c_0 + c_1 X$. One checks that $f = v + u\,(X^2 + X)$.
+
+#### Implementation
+
+The decomposition is computed in place, on the array of the coefficients of $f$, with additions (XORs) only. The coefficients of $f_i$ replace those of degree $i\tau, \ldots, (i+1)\tau - 1$ of $f$.
+
+**One step.** The formulas for $u$ and $v$ are applied by a single loop of $m$ additions, which writes $v$ in the lower half of the array and $u$ in the upper half (position $m + j$ holds the coefficient of degree $j$ of $u$):
+
+~~~C++
+for(uint64_t i = n - 1; i >= m; i--) p[i - m + delta] ^= p[i];
+~~~
+
+The loop adds $f_{hi} X^\delta$ to the array, the coefficient at position $m + j$ being added to position $j + \delta$: the terms of degree $<m$ are added to the lower half, and the terms of degree $\geq m$, which come from $f_a$, are added at positions $m, \ldots, m+\delta-1$ of the upper half. It must run in *decreasing* order of $i$. Indeed, for $i = n - \delta + j$, $j < \delta$ (the coefficients of $f_a$), the addition goes to position $m + j$, i.e. in the upper half, where it adds $f_a$ to $f_b$ as needed for $u$. Position $m + j$ is read again at a later iteration of the loop, where its (modified) value is added to position $j + \delta$ of the lower half. This is what adds $(f_a + f_b) X^\delta$ to $f_c$, and not just $f_b X^\delta$, to obtain $v$. For the example above, the loop does $c_2 \leftarrow c_2 + c_3$ then $c_1 \leftarrow c_1 + c_2 + c_3$ (with the new $c_2$), which gives the array $[c_0,\ c_1 + c_2 + c_3,\ c_2 + c_3,\ c_3]$: $v = c_0 + (c_1 + c_2 + c_3) X$ in the lower half, and $u = (c_2 + c_3) + c_3 X$ in the upper half.
+
+**Recursion.** The step is applied recursively to the two halves of the array (the lower half contains $v$, the upper half contains $u$), as long as their size is larger than $\tau$. The coefficients of $u_i$ are then at positions $m + i\tau$, which are the positions of $f_{i+\delta}$.
+
+**Cost.** Each level costs $n/2$ additions, for a total of $\frac{n}{2}\log_2(n/\tau)$ additions and no multiplication. For $n = \tau^2$, as in the DFT, this is $\frac{n}{2} t$.
+
+**Reverse.** The inverse decomposition (used by the inverse DFT) first recomposes the two halves recursively, then performs the same additions as the loop above, but in *increasing* order of $i$: each addition cancels itself, so performing them in the reverse order undoes the loop.
+
+**Interleaved polynomials.** To decompose $2^{\text{logstride}}$ interleaved polynomials at once (coefficient $c$ of polynomial $r$ at index $c \cdot 2^{\text{logstride}} + r$), the same loops are used with all offsets multiplied by $2^{\text{logstride}}$: they then add blocks of consecutive words, which can be vectorized.
+
+**Variants.** The implementation used by the fast product (`mg_decompose_taylor_recursive` in `include/mg_templates.h`) assumes that $n$ is a power of 2 (the polynomial is padded with zeros if needed). The generic version (`decompose_taylor_recursive` in `include/decompose_taylor.h`) accepts any number of coefficients: $n$ is then the smallest power of 2 not below it, the loop only runs over the existing coefficients, and the recursion is on the $m$ low coefficients and on the remaining high ones. Iterative versions (`decompose_taylor_iterative*`) perform the same additions level by level instead of recursively.
 
 ### Remark: products of polynomials, and the last stages of the DFT
 
