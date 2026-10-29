@@ -75,6 +75,7 @@ add_executable(product_test
  "product_test.cpp"
  "utils.cpp"
  "libfft/mg.cpp"
+ "libfft/mg_fused.cpp"
 )
 
 target_include_directories(product_test PRIVATE ${CMAKE_CURRENT_BINARY_DIR} "${PROJECT_SOURCE_DIR}/include") 

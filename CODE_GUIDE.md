@@ -117,6 +117,26 @@ This is what `product_test` benchmarks. It is specialized for GF(2^64) and uses 
   public entry points. `naive_product` is a PCLMUL schoolbook reference.
 - Compile-time switch: `GRAY_CODE` (off) selects a Gray-code iteration order over the rows.
 
+### The fused variant (`mg_fused.h`, `libfft/mg_fused.cpp`)
+
+A copy of `mg.cpp` in namespace `mg_fused`, with the following changes (the original is meant to stay
+a 'pure' implementation).
+
+- `mg_core`, `mg_reverse_core`, `mg_smalldegree` and `mg_smalldegree_with_buf` take a `cut` argument:
+  0 (plain), 16 or 4. With `cut = 16` (`s == 3`, `logstride == 0`) or `cut = 4` (`s == 2`), the loop
+  on rows is skipped in the forward and in the reverse DFT. `mg_cut_level` selects 16 if all DFTs
+  have at least 2**5 values, else 4 if at least 2**3, else 0 (`-DMG_CUT_LEVEL=n` forces a level).
+- Rows are 16 (or 4) coefficients in the monomial basis, to be evaluated on a coset a + GF(16) of the
+  subfield GF(16) (the Cantor basis spans subfields: x**R - x vanishes on GF(R) for R = 2**(2**j)).
+  DFT, pointwise product and inverse DFT on a row are therefore a product modulo
+  x**R + x + c, c = a**R + a, which is `offsets_mult[log2 R]` in `mg_core` (and, for row q, c xor the
+  beta image of q). `ring_rows` / `ring_mul` / `ring_mul2` compute these products with Karatsuba on
+  unreduced 128-bit clmul results, then reduce (r_k = p_k + p_{k+R-1} + c p_{k+R}), two rows at once in
+  a ymm register when `MG_USE_YMM_CLMUL` is defined.
+- `product_batch` is replaced by `mg_ring_rows` when `cut != 0`.
+- Measured on a Ryzen 9 5950X, a row product is about 2x (R = 4, xmm) to 3.3x (R = 16, ymm, two rows)
+  faster than the DFT chain, and slower for R = 256 (3.5x).
+
 ### Tests and utilities
 
 - `product_test.cpp` multiplies random polynomials of degree 2^(lsz-1) - 1. The default list is
@@ -124,7 +144,7 @@ This is what `product_test` benchmarks. It is specialized for GF(2^64) and uses 
   `test_in_place_variant`, `test_naive_product`, `benchmark`, `min_time` (2 s) and `max_runs`
   (100). Exit code 0 means all comparisons passed. It requires the CPU flags AVX2, PCLMULQDQ,
   POPCNT and BMI1, and exits with code 2 otherwise.
-  - A `FIXME` in `main` notes that the case lsz = 7 (two 64-bit polynomials) differs from gf2x.
+  - `degree_test` first compares the in-place and out-of-place products of both variants with a naive product for all degrees d1 >= d2 up to 300, with minimal buffers and checking that the bits above the degree of the result are zero. It covers the operands of at most 64 bits and the degrees that are not of the form 2**k - 1.
 - `fft_test.cpp` runs six tests, switchable through `run_tests[]`: VzGG DFT against direct
   evaluation, its reverse, truncated Mateer-Gao (and the VzGG/MG combination), the reverse
   truncated Mateer-Gao, Taylor decomposition, and DFT inversion. Top-of-file knobs: `word`

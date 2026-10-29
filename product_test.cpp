@@ -2,9 +2,12 @@
 #include <iostream>
 #include <random> // for mt19937_64, uniform_int_distribution<>
 #include <memory> // for unique_ptr
+#include <vector>
+#include <algorithm> // for copy, fill, equal, max
 
 #include "timer.h"
 #include "mg.h"
+#include "mg_fused.h"
 #include "utils.h"
 
 #include "gf2x.h"
@@ -21,6 +24,8 @@ constexpr bool do_gf2x = false;
 #error "unsupported compiler"
 #endif
 #endif
+// choose between the plain Mateer-Gao product (mg.h) and the variant with fused small stages (mg_fused.h)
+constexpr bool use_fused_variant = false;
 // choose between in-place or out-of-place product variants of Mateer-Gao product
 constexpr bool test_in_place_variant = true;
 constexpr bool test_naive_product = false; // test or benchmark a naive implementation of polynomial
@@ -44,6 +49,70 @@ constexpr uint64_t max_runs = 100;
 // (required by the implementation of 'contract' and 'expand' in mg.cpp)
 // gcc only
 // static_assert( __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__);
+
+// naive product of binary polynomials, for the degree tests below
+static void naive_bit_product(const uint64_t* a, uint64_t d1, const uint64_t* b, uint64_t d2, uint64_t* r)
+{
+  for(uint64_t i = 0; i <= d1; i++)
+  {
+    if(((a[i / 64] >> (i % 64)) & 1) == 0) continue;
+    for(uint64_t j = 0; j <= d2; j++)
+    {
+      if((b[j / 64] >> (j % 64)) & 1) r[(i + j) / 64] ^= 1uLL << ((i + j) % 64);
+    }
+  }
+}
+
+// tests the in-place and out-of-place products of both variants against a naive product,
+// for all pairs d1 >= d2 of degrees up to max_degree (small degrees only, in particular
+// operands of at most 64 bits, and degrees that are not of the form 2**k - 1), with
+// minimal buffer sizes. Bits of the result above its degree must be zero.
+static bool degree_test(uint64_t max_degree)
+{
+  cout << "Testing products of polynomials of all degrees d1 >= d2, d1 <= " << max_degree << endl;
+  mt19937_64 engine(1);
+  uint64_t cases = 0, errors = 0;
+  for(uint64_t d1 = 0; d1 <= max_degree; d1++)
+  {
+    for(uint64_t d2 = 0; d2 <= d1; d2 += (d1 < 140) ? 1 : 7)
+    {
+      // sizes in 32-bit words, as in the product functions
+      unsigned int lg = 0, l2 = 0;
+      while((1uLL << lg) * 32 < (d1 + d2 + 1)) lg++;
+      while((1uLL << l2) * 32 < (d2 + 1)) l2++;
+      const uint64_t nw = (d1 + d2) / 64 + 1;
+      vector<uint64_t> a(d1 / 64 + 1, 0), b(d2 / 64 + 1, 0), expected(nw, 0);
+      for(uint64_t k = 0; k <= d1; k++) if(engine() & 1) a[k / 64] |= 1uLL << (k % 64);
+      for(uint64_t k = 0; k <= d2; k++) if(engine() & 1) b[k / 64] |= 1uLL << (k % 64);
+      naive_bit_product(a.data(), d1, b.data(), d2, expected.data());
+      for(int variant = 0; variant < 2; variant++)
+      {
+        // out of place: result buffer filled with garbage
+        vector<uint64_t> p1 = a, p2 = b, r(nw, 0xaaaaaaaaaaaaaaaauLL);
+        if(variant == 0) mg_binary_polynomial_multiply(p1.data(), p2.data(), r.data(), d1, d2);
+        else mg_fused::mg_binary_polynomial_multiply(p1.data(), p2.data(), r.data(), d1, d2);
+        bool ok = (r == expected);
+        // in place: p1 has 2**lg words, p2 as few as allowed
+        vector<uint64_t> q1(1uLL << lg, 0xaaaaaaaaaaaaaaaauLL), q2(max<uint64_t>(max<uint64_t>(1, b.size()), (1uLL << l2) / 2), 0);
+        copy(a.begin(), a.end(), q1.begin());
+        copy(b.begin(), b.end(), q2.begin());
+        // bits above the degree of the input polynomials must be zero
+        fill(q1.begin() + (long) a.size(), q1.end(), 0);
+        if(variant == 0) mg_binary_polynomial_multiply_in_place(q1.data(), q2.data(), d1, d2);
+        else mg_fused::mg_binary_polynomial_multiply_in_place(q1.data(), q2.data(), d1, d2);
+        ok = ok && equal(expected.begin(), expected.end(), q1.begin());
+        cases++;
+        if(!ok)
+        {
+          errors++;
+          if(errors <= 10) cout << " ** Wrong result ** (" << (variant == 0 ? "plain" : "fused") << ") d1 = " << d1 << ", d2 = " << d2 << endl;
+        }
+      }
+    }
+  }
+  cout << " " << cases << " cases, " << errors << " errors" << endl;
+  return errors != 0;
+}
 
 static bool mateer_gao_product_test(
     unsigned int* log_sz,
@@ -157,7 +226,8 @@ static bool mateer_gao_product_test(
     {
       if constexpr(compute_in_place)
       {
-        mg_binary_polynomial_multiply_in_place(p1, p2, sz/2 - 1, sz/2 - 1);
+        if constexpr(use_fused_variant) mg_fused::mg_binary_polynomial_multiply_in_place(p1, p2, sz/2 - 1, sz/2 - 1);
+        else mg_binary_polynomial_multiply_in_place(p1, p2, sz/2 - 1, sz/2 - 1);
       }
       else
       {
@@ -167,7 +237,8 @@ static bool mateer_gao_product_test(
         }
         else
         {
-          mg_binary_polynomial_multiply(p1, p2, p3, sz/2 - 1, sz/2 - 1);
+          if constexpr(use_fused_variant) mg_fused::mg_binary_polynomial_multiply(p1, p2, p3, sz/2 - 1, sz/2 - 1);
+          else mg_binary_polynomial_multiply(p1, p2, p3, sz/2 - 1, sz/2 - 1);
         }
       }
       uint64_t* result = compute_in_place ? p1 : p3;
@@ -204,8 +275,7 @@ static bool mateer_gao_product_test(
 
 int main(int UNUSED(argc), char** UNUSED(argv))
 {
-  // FIXME log_sz = 7 (product of 2 64-bit polynomials) shows a difference between both
-  // the naive product implementation and the DFT implentation differ from gf2x.
+  // log_sz = 7 (product of 2 64-bit polynomials) is covered by degree_test
   //unsigned int log_sz[] = {10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37};
   unsigned int log_sz[] = {8,9,10,11,12,13,14,15,16,17,18,19,25,30,34};
   //unsigned int log_sz[] = {8};
@@ -221,7 +291,8 @@ int main(int UNUSED(argc), char** UNUSED(argv))
     exit(2);
   }
   unsigned int num_sz = sizeof(log_sz) / sizeof(unsigned int);
-  bool mateer_gao_error = mateer_gao_product_test(log_sz, num_sz, benchmark);
+  bool mateer_gao_error = degree_test(300);
+  mateer_gao_error |= mateer_gao_product_test(log_sz, num_sz, benchmark);
   if(mateer_gao_error) cout << "Mateer-Gao product test failed" << endl;
   return mateer_gao_error? EXIT_FAILURE : EXIT_SUCCESS;
 }
