@@ -23,7 +23,7 @@ Both have the same interface, give the same results, and use less memory than `g
 
 The implementations are tested by multiplying polynomials of degree $2^u - 1$ for values of $u$ s.t. the computations fit into memory. If `gf2x` is available, results are compared with its output. The programs that run these tests and benchmarks are described in [Programs](#programs). 
 
-On an AMD 5950X, the optimized variant is faster than gf2x from $u = 11$, with a growing advantage for large sizes (see the results below). Each variant is available in an in-place and in an out-of-place version. The in-place variant uses less memory and is slightly faster.
+Each variant is available in an in-place and in an out-of-place version. The in-place variant uses less memory and is slightly faster.
 
 ### Optimized variant
 
@@ -35,6 +35,8 @@ On an AMD 5950X, the optimized variant is faster than gf2x from $u = 11$, with a
   **Implementation.** A row product is computed with Karatsuba on carry-less 64x64-bit products that are left unreduced (the reduction is linear over $\mathbb{F}_2$ and done once at the end), then reduced modulo $x^R + x + c$, which costs one multiplication by $c$ per coefficient since $x^R = x + c$. When the CPU supports it (see [CPU requirements](#cpu-requirements)), two rows are processed at once with 256-bit `vpclmulqdq`; otherwise a 128-bit version is used. The direct product beats the chain of DFTs for $R = 4$ and $16$ (by a factor of 2 to 3 on a row) but not for $R = 256$, hence the choice of these row sizes. See `CODE_GUIDE.md` for more details.
 - **Base case.** For small products (operands of at most $2^{15}$ bits, i.e. 512 64-bit words, so results of up to $2^{16}$ bits), the DFT is not used at all: the product is computed directly by Karatsuba on carry-less 64x64-bit products (one `pclmulqdq` for operands of at most 64 bits, three for 128 bits, and so on). The operands are processed as arrays of 128-bit digits (2 words) kept in vector registers, which makes the additions and the reassembly of the result cheap; this is the organization of the hand-crafted small products of gf2x. This is faster than the DFT-based product up to $2^{16}$ bits (about 1.15 times faster at $2^{16}$, and more than 10 times faster at $2^{8}$, compared to the DFT-based product of the optimized variant), and slower above (1.2 times at $2^{17}$). This crossover was set by experiment (macro `MG_FUSED_BASE_LOGN` in `mg_fused.cpp`; `MG_FUSED_BASE_LOGN=-1` disables the base case).
 - **Taylor decompositions.** The optimized variant also uses faster Taylor decompositions (`include/mg_taylor_opt.h`): two levels of the recursion are merged into one step, and the decomposition of rows of 8 and 16 words is done in AVX2 registers. They are worth 3 to 6% of the time of a product at sizes of $2^{18}$ bits and more (where the DFT is used), and give the same results as the original functions. The plain variant still uses the original ones. See [taylor_merge.md](taylor_merge.md).
+
+The optimized variant is 13 to 15 times faster than the plain one up to $2^{10}$ bits, 2.9 to 11 times faster from $2^{11}$ to $2^{15}$, 2 times faster at $2^{16}$, and the difference then decreases: 1.4 to 1.5 times at $2^{17}$ to $2^{20}$, 1.2 times at $2^{27}$ to $2^{30}$, and 1.1 times from $2^{31}$ on. See [Plain variant](#plain-variant).
 
 **Limitations and origin of the base case.** All the timings in this document are for polynomials of degree $2^{u-1} - 1$, i.e. for sizes that are powers of 2. Unlike `gf2x`, the implementation (both variants) is not optimized for other sizes: the size of the DFTs, and the size of the operands in the base case, are rounded up to a power of 2, so that the time of a product only increases in steps, at the powers of 2, and the product of two polynomials of a size just above a power of 2 takes about as long as a product of the next power of 2. `gf2x` on the other hand has code specialized for many sizes (1 to 9 words, then a choice of Toom-Cook variants for each size), and its time increases more smoothly. The organization of the base case (Karatsuba on 128-bit digits kept in vector registers) was inspired by the hand-crafted small products of `gf2x`.
 
@@ -119,8 +121,6 @@ It is a direct implementation of the Mateer-Gao DFT, kept as a reference, as it 
 |35| 75.71| 68.93| 1.10|
 |36| 169.4| 150.7| 1.12|
 |37| 370.8| 329.1| 1.13|
-
-The optimized variant is 13 to 15 times faster than the plain one up to $2^{10}$ bits, 2.9 to 11 times faster from $2^{11}$ to $2^{15}$, 2 times faster at $2^{16}$, and the difference then decreases: 1.4 to 1.5 times at $2^{17}$ to $2^{20}$, 1.2 times at $2^{27}$ to $2^{30}$, and 1.1 times from $2^{31}$ on.
 
 ### Memory requirements
 
