@@ -14,49 +14,61 @@ Note: this document is best viewed oustide of GitHub which has several LaTeX ren
 - $\{\beta_1, \ldots, \beta_n\}$ is a basis of $\mathbb{F}$ on $\mathbb{F}_2$,
 - $W_0=\{0\}$, $W_i=<\beta_1, \ldots, \beta_i>$, $C_i=<\beta_{i+1}, \ldots, \beta_n>$, $i=1\ldots n$,
 - $\sigma_i$ is the polynomial that cancels on $W_i$:
-$$\sigma_i = \prod_{a\in W_i} (x-a)$$
+$$\sigma_i = \prod_{a\in W_i} (X-a)$$
 then $\deg \sigma_i = 2^i$ and
 
-$$\sigma_0(x) = x,$$
-$$\sigma_{i+1}(x) = \sigma_i(x-\beta_{i+1}) \times \sigma_i(x).$$
-It is shown recursively that the $\sigma_{i}$ are linear (they have only monomials whose degree is a power of 2) and that $$\sigma_{i+1}(x) = \sigma_i^2(x) - \sigma_i(x)\beta_{i+1}. \quad (R)$$
+$$\sigma_0(X) = X,$$
+
+$$\sigma_{i+1}(X) = \sigma_i(X-\beta_{i+1}) \: \sigma_i(X). \quad (R_0)$$
+
+The latter results from $W_{i+1}\setminus W_i = W_i + \beta_{i+1}$.
+
+It is shown recursively that the functions associated to $\sigma_{i}$ are linear ($\sigma_i$ only has monomials whose degree is a power of 2) and that 
+
+$$\sigma_{i+1}(X) = \sigma_i^2(X) - \sigma_i(X)\beta_{i+1}. \quad (R)$$
+
+(apply $\sigma_i$ linearity to $(R_0)$).
+
 By the linearity of $\sigma_i$, for $\varepsilon \in C_{i+1}$, $\sigma_i(x - \beta_{i+1} - \varepsilon) = \sigma_i(x) - \sigma_i(\beta_{i+1} + \varepsilon)$. $\sigma_i$ has at most $i$ non-zero terms (corresponding to the exponents which are powers of 2, excluding the constant term).
 
 This suffices to deduce the Von Zur Gathen - Gerhard DFT algorithm in $\mathbb{F}$:
 
-Given $f$ a polynomial on $\mathbb{F}$, $\varepsilon \in C_{i+1}$, and $g = f \mod \sigma_{i+1}(x-\varepsilon)$, if $g_0 = g \mod \sigma_i(x-\varepsilon)$ and $g_1 = g \mod \sigma_i(x-\varepsilon - \beta_{i+1})$, then with $g = g_0 + \sigma_i(x-\varepsilon) q$, $\deg(h_0) < 2^i$,
+Given a polynomial $f$ on $\mathbb{F}$, $\varepsilon \in C_{i+1}$, and $g = f \mod \sigma_{i+1}(x-\varepsilon)$, if $g_0 = g \mod \sigma_i(x-\varepsilon)$ and $g_1 = g \mod \sigma_i(x-\varepsilon - \beta_{i+1})$, then with $g = g_0 + \sigma_i(x-\varepsilon) q$, $\deg(h_0) < 2^i$,
 $$g_1 = g_0 + \sigma_i(\beta_{i+1}) q$$
 Indeed, $g = g_0 + \sigma_{i+1}(x-\varepsilon) q = [g_0 + \sigma_i(\beta_{i+1}) q] + \sigma_i(x-\varepsilon - \beta_{i+1}) q$.
-Starting from $g$, we can thus compute $g_0$ and $g_1$ for the price of a single Euclidean division followed by the addition of $q \times \text{constant}$ to $g_0$.
 
-The Von Zur Gathen - Gerhard algorithm consists in performing this computation starting from a polynomial of degree $<2^n$ on $\mathbb{F}$, for $i=n-1,\ldots,0$, with $2^{n-1-i}$ Euclidean divisions at each step, corresponding to all possible offsets $\varepsilon$. The remainders of the Euclidean divisions at the last step are nothing else than the values of $f$ at the corresponding $\varepsilon$ points. The algorithm performs $O(k \log^2(k))$ additions or multiplications, $k=2^n$. See [1] p.99 for a precise analysis of the complexity in number of additions and multiplications in $\mathbb{F}$.
+Starting from $g$, we can thus compute $g_0$ and $g_1$ for the price of a **single Euclidean division** followed by the addition of $q \times \text{constant}$ to $g_0$. This is the core algorithmic trick that yields the alogrithmic complexity of Von Zur Gathen - Gerhard.
+
+The Von Zur Gathen - Gerhard algorithm consists in performing this computation starting from a polynomial of degree $<2^n$ on $\mathbb{F}$, for $i=n-1,\ldots,0$, with $2^{n-1-i}$ Euclidean divisions at each step, corresponding to all possible offsets $\varepsilon$. The remainders of the Euclidean divisions at the last step are nothing else than the values of $f$ at the corresponding $\varepsilon$ points. The algorithm performs $O(k \log^2(k))$ additions or multiplications, $k=2^n$. See [1] p.99 for a precise analysis of the number of additions and multiplications performed in $\mathbb{F}$.
 
 ### Improvement: Cantor - Wang Zhu, Cantor bases
 
-The Von Zur Gathen - Gerhard algorithm does not make any assumption about the base $\{\beta_1,\ldots,\beta_n\}$ used. Choosing the right base allows to reduce the number of multiplications to be performed by making sure that the $\sigma_i$ have only coefficients equal to 1, and that for any $i$, $\sigma_i(\beta_{i+1}) = 1$. For this, we choose the $\beta_i$ s.t.
+The Von Zur Gathen - Gerhard algorithm does not make any assumption about the basis $\{\beta_1,\ldots,\beta_n\}$ used. Choosing the right basis allows to reduce the number of multiplications to be performed by making sure that the $\sigma_i$ have only coefficients equal to 1, and that for any $i$, $\sigma_i(\beta_{i+1}) = 1$. For this, we choose the $\beta_i$ s.t.
 $$\forall i < n, \beta_i = \beta_{i+1}^2 + \beta_{i+1} \quad (E)$$
 
-The  basis obtained is a *Cantor basis*. In a given finite field $\mathbb{F}$ of size $2^m$, there is no guarantee that such a basis exists; if $2^{s-1} < n \leq 2^s$, such a basis exists if and only if $2^s | m$. See below for the construction of the basis.
+The  basis obtained is a *Cantor basis*. Such a basis exists only if $n$ is a power of two; let's write $n=2^s$. See below for a justification of this and the construction of the basis.
 
-With such a choice of basis, we show by recurrence from $(R)$ that
+With a Cantor basis, it is shown by recurrence from $(R)$ that
 
 $$\forall i,\ \sigma_i(\beta_{i+1}) = 1 \text{ and } \sigma_{i+1} = \sigma_i^2 + \sigma_i = \varphi(\sigma_i) \text{ with }\varphi(x) = x^2 + x.$$
 Then $\forall i,\ \sigma_i = \varphi^{\circ i}(x)$ and all the non-zero coefficients of the  $\sigma_i$ are equal to 1. This decreases the number of multiplications to be performed during the Euclidean divisions in the Von Zur Gathen - Gerhard algorithm. The number of multiplications to evaluate a polynomial of degree $k$ is in $O(k \log(k))$ and the number of additions becomes $O(k \log^{1.585}(k))$. See [1] p.106 for the calculation of these bounds.
 
-The improved algorithm is called Cantor or Wang-Zhu algorithm.
+The improved algorithm is called **Cantor** or **Wang-Zhu** algorithm.
 
 Additional properties of Cantor bases are useful for the Mateer-Gao algorithm presented in the next paragraph.
 
 - for $t=2^j \leq n$, $\sigma_{t}=x^{2^t} + x$. This is shown by recurrence:
-  - it is true for $t=1$: $\sigma_1=x^2+x$;
+  - $\sigma_1=x^2+x$;
   - if $\sigma_t = \varphi^{\circ t}(x) = x^{2^t} + x$,
-$\sigma_{2t} = \varphi^{\circ 2t} = \varphi^{\circ t}(x))= (x^{2^t} + x)^{2^t} + x^{2^t} + x = x^{2^t} + x^{2^t} + x$.
-- If $$\omega_j = \sum_{i = 0}^{n-1} \varepsilon_i \beta_{i+1}, \quad \varepsilon_i \in{0,1}$$ with $j$ the integer $\sum_{i = 0}^{n-1} \varepsilon_i \ 2^i,$
-then
-$$\sigma_i(\omega_j) = \omega_{j\gg i}$$
-where $\gg$ represents the left shift (i.e. $j \gg i$ = $j/2^i$, truncated to the lower integer). This follows from
+$\sigma_{2t} = \varphi^{\circ 2t} = \varphi^{\circ t}(x^{2^t}+x)= (x^{2^t} + x)^{2^t} + x^{2^t} + x = x^{2^{2t}} + x^{2^t} + x^{2^t} + x = x^{2^{2t}}+x$.
+- If $$\omega_j = \sum_{i = 0}^{n-1} \varepsilon_i \beta_{i+1}, \quad \varepsilon_i \in{0,1}$$ with $j$ the integer $\sum_{i = 0}^{n-1} \varepsilon_i \ 2^i,$ then
+  $$\sigma_i(\omega_j) = \omega_{j\gg i}$$
+  
+  where $\gg$ represents the left shift (i.e. $j \gg i$ = $j/2^i$, truncated to the lower integer). This follows from
+  
   - the linearity of $\sigma_i = \varphi^{\circ i}$
-  - from the fact that $\forall i>1, \varphi(\beta_i) = \beta_{i-1}$, and $\varphi(\beta_1) = \varphi(1) = 0$.
+  - the fact that $\forall i>1, \varphi(\beta_i) = \beta_{i-1}$, and $\varphi(\beta_1) = \varphi(1) = 0$.
+
 As a particular case, $\sigma_i(\beta_{i+1})=\sigma_i(\omega_{2^{i}})=\omega_{1} = 1$.
 
 Let us also mention the following formula (not used in the following):
@@ -78,54 +90,60 @@ We choose $\beta_n$ a root of $\sigma_n$ but not of $\sigma_{n-1}$, and for all 
 
 As $\sigma_i$ has $2^i$ roots in $\mathbb{F}$, there are $2^{n-1}$ valid choices for $\beta_n$, that is to say, half of the values of $\mathbb{F}$; it is thus not difficult to find a valid value for $\beta_n$.
 
-Starting from a constructed base $\{\beta_i\}$, and with $\beta$ a linear combination of $\beta_1,\ldots,\beta_{n-1}$, let $\gamma_n = \beta_n + \beta$ and for all $i < n$, $\gamma_i = \varphi(\gamma_{i+1})$. Then by linearity of $\sigma_n$ and $\sigma_{n-1}$, $\sigma_n(\gamma_n)=0$ and $\sigma_{n-1}(\beta_n) = \sigma_{n-1}(\beta_n) \neq 0$: $\{\gamma_i\}$ is another Cantor basis. All Cantor bases are obtained in this way because there are $2^{n-1}$ possible values for $\beta$.
+Starting from a constructed basis $\{\beta_i\}$, and with $\beta$ a linear combination of $\beta_1,\ldots,\beta_{n-1}$, let $\gamma_n = \beta_n + \beta$ and for all $i < n$, $\gamma_i = \varphi(\gamma_{i+1})$. Then by linearity of $\sigma_n$ and $\sigma_{n-1}$, $\sigma_n(\gamma_n)=0$ and $\sigma_{n-1}(\beta_n) = \sigma_{n-1}(\beta_n) \neq 0$: $\{\gamma_i\}$ is another Cantor basis. All Cantor bases are obtained in this way because there are $2^{n-1}$ possible values for $\beta$.
+
+This construction shows that whenever $n=2^s$, a Cantor basis exists.
 
 #### "Outer" construction: joint construction of the field and the basis
 
 We can also construct $\mathbb{F}$ jointly with $\beta_i$, by successive extensions of $\mathbb{F}_{2}$: if $\beta_1, \beta_2, \ldots,\beta_i$ are already constructed with $\beta_1=1$, $\beta_{i+1}$ is constructed as a solution of $(E)$. If a field of dimension $n={2^s}$ over $\mathbb{F}_2$ has been produced thus far, this construction works for $\beta_1, \ldots, \beta_n$ (see discussion in for the "inner" construction). When there is no solution, the field $<\beta_1,\ldots,\beta_i>$ is extended by an element *defined* by $(E)$, which has the effect of doubling the dimension of $\mathbb{F}$ over $\mathbb{F}_2$.
 
+A related argument shows why, when $\mathbb{F}$ has a Cantor basis, one must have $n=2^s$: if $\beta_1, \ldots, \beta_n$ is a Cantor basis, either $\beta_{i+1}$ belongs to $k=\mathbb{F}_2[\beta_1,\ldots,\beta_{i-1}]$, or it is an extension of degree 2 of $k$. In the end, $\mathbb{F}$ is a tower of extensions of degree 2 of $\mathbb{F}_2$, therefore has degree $2^s$ over it for some $s$.
+
 ## Mateer-Gao
 
 ### Idea
 
-A Cantor base is used, we use the same notations as above.
+A Cantor basis is used, we use the same notations as above.
 
 Input: $s \geq 0$, $t = 2^{s-1}$, $\eta = 2^{2t}$, $f$ polynomial of degree $< \eta$, an *offset* $j < 2^{n-2t}$.
 
 Output: in an array of size $\eta$: $\{f(\omega_{\eta j}), f(\omega_{\eta j + 1}), \ldots, f(\omega_{(\eta + 1) j - 1})\}$ = evaluation of $f$ over $W_{2t} + \omega_{\eta j}$.
 
-Let $\tau = 2^t$, $\eta = 2^{2t}$, $2t = 2^s$. Then $\eta = \tau^2$.
+Let $\tau = 2^t$, $\eta = 2^{2t}$, $2t = 2^s$. Then 
 
-Since $t$ is a power of 2, $\sigma_t(x) = x^{2^t} - x = x^{\tau} - x$, $\sigma_{2t}(x) = x^{2^{2t}} - x = x^{\eta} - x$.
+$$\eta = \tau^2,$$
+$$\sigma_t(X) = X^{2^t} - X = X^{\tau} - X,$$
+$$\sigma_{2t}(X) = X^{2^{2t}} - X = X^{\eta} - X.$$
 
-> If $f$ is processed as part of a higher level recursive call, $f$ represents the initial polynomial $f_0$ modulo $\sigma_{2t}(x- \omega_{\eta j})$. $f$ and $f_0$ coincide on $W_{2t} + \omega_{\eta j}$.
+If $f$ is processed as part of a higher level recursive call, $f$ represents the initial polynomial $f_0$ modulo $\sigma_{2t}(x- \omega_{\eta j})$. $f$ and $f_0$ coincide on $W_{2t} + \omega_{\eta j}$.
 
-The $\sigma_{k}$ are linear, and according to the results concerning the Cantor bases,
+The $\sigma_{k}$ are linear and as shown previously,
 
 $$\sigma_{k}(\omega_{j}) = \omega_{j\gg k}.$$
 
 $\sigma_{2t}$ cancels on $W_{2t}$ and $\sigma_{t}$ on $W_t$; the $W_t+\omega_{\tau k}$ partition $W_{2t}$ for $k\leq \tau$, so
-$$\sigma_{2t}(x) = \prod_{k < \tau} \sigma_{t}(x - \omega_{\tau k}) = \prod_{k < \tau} \left [\sigma_{t}(x) - \omega_{k} \right].$$
+$$\sigma_{2t}(X) = \prod_{k < \tau} \sigma_{t}(X - \omega_{\tau k}) = \prod_{k < \tau} \left [\sigma_{t}(X) - \omega_{k} \right ].$$
 
 This relation can be translated by $\omega_{\eta j}$ to give
-$$\sigma_{2t}(x - \omega_{\eta j}) = \sigma_{2t}(x) - \omega_j = \prod_{k < \tau} \left[\sigma_{t}(x - \omega_{\eta j}) - \omega_{k} \right] = \prod_{k < \tau} \left[\sigma_{t}(x) - \omega_{\tau j + k} \right].$$
+$$\sigma_{2t}(X - \omega_{\eta j}) = \sigma_{2t}(X) - \omega_j = \prod_{k < \tau} \left[\sigma_{t}(X - \omega_{\eta j}) - \omega_{k} \right] = \prod_{k < \tau} \left[\sigma_{t}(X) - \omega_{\tau j + k} \right].$$
 
-If we deduce from $f = f_0 \mod \sigma_{2t}(x - \omega_{\tau j})$ the set of $f_0$ modulo the $R_k = \sigma_{t}(x) - \omega_{\tau j + k}$, $k < \tau$, it will be possible to finish the evaluation of $f_0$ on  $W_{2t} + \omega_{\eta j}$ by doing an DFT on each of the $R_k$, which will give the values of $f_0$ on the spaces $W_t + \omega_{\eta j + \tau k}$, $k< \tau$, which partition $W_{2t} + \omega_{\eta j}$.
+If we deduce from $f = f_0 \mod \sigma_{2t}(x - \omega_{\tau j})$ the set of $f_0$ modulo the $R_k = \sigma_{t}(x) - \omega_{\tau j + k}$, $k < \tau$, it is then possible to finish the evaluation of $f_0$ on  $W_{2t} + \omega_{\eta j}$ by performing a DFT on each of the $R_k$, which will give the values of $f_0$ on the spaces $W_t + \omega_{\eta j + \tau k}$, $k< \tau$, which partition $W_{2t} + \omega_{\eta j}$.
 
-The efficiency of the algorithm comes from not doing the computations of $f_0$ mod $R_k = \sigma_{t}(X) - \omega_{\tau j + k}$ for $k < \tau$ independently. Instead, we proceed as follows:
+**The efficiency of the algorithm comes from not doing the computations of $f_0$ mod $R_k = \sigma_{t}(X) - \omega_{\tau j + k}$ for $k < \tau$ independently**. Instead, we proceed as follows:
 
 First, $f$ is decomposed as
 
-$$f(x) = \sum_{\ell<\tau} f_{\ell}(x) \: \sigma_{t}^{\ell}$$
+$$f(X) = \sum_{\ell<\tau} f_{\ell}(X) \: \sigma_{t}^{\ell}$$
 with $\forall \ell < \tau, \deg f_{\ell} < \tau$.
 
 (This is a "generalized Taylor decomposition"; it turns out that it can be computed linearly in $\eta$.)
 
-Then, as $R_k = \sigma_{t} - \omega_{\tau j + k}$,
+Then, as $R_k = \sigma_{t} - \omega_{\tau j + k}$, $\sigma_t^\ell = \omega_{\tau j + k}^{\ell} \mod R_k$ and
 
-$$f \mod R_k = \sum_{\ell<\tau} f_{\ell}(x) \: \omega_{\tau j + k}^{\ell}.$$
+$$f \mod R_k = \sum_{\ell<\tau} f_{\ell} \: \omega_{\tau j + k}^{\ell}.$$
 
-In other words, the $\{f \mod R_k, k < \tau\}$ are evaluations of the polynomial $P(y)= \sum_{i<\tau} f_i(x) y^i$ on the points of the space $W_t + \omega_{\tau j}$. These evaluations can therefore be performed by an DFT. The fact that the coefficients of $P$  and the values to compute are themselves polynomials is not a problem: $\tau$ DFT are performed according to the degrees in $x$ and the final values are obtained by reassembling the DFT results.
+In other words, the $\{f \mod R_k, k < \tau\}$ are evaluations of the polynomial $P(Y)= \sum_{i<\tau} f_i(X) Y^i$ on the points of the space $W_t + \omega_{\tau j}$. These evaluations can therefore be performed by an DFT. The fact that the coefficients of $P$  and the values to compute are themselves polynomials is not a problem: $\tau$ DFT are performed according to the degrees in $X$ and the final values are obtained by reassembling the DFT results.
 
 The recursion step ends with an DFT of each of the $R_k$, which produces the desired values of $f$ (or $f_0$).
 
@@ -191,7 +209,7 @@ void dft(uint64_t* poly, int s, uint64_t j, unsigned int logstride)
 }
 ~~~
 
- The main implementation difficulty is to ensure simultaneously a good performance for the multiplication in $\mathbb{F}$ (function `multiply`) and for the evaluation of $j\mapsto \omega_j$ (function `omega`). Computing directly in basis $\beta$ can be tempting (`omega` reduces to the identity in this case), but prevents a very efficient implementation of the product; furthermore, uses of the DFT may require to use a specific basis. See application to binary polynomial products below.
+ The main implementation difficulty is to ensure simultaneously a good performance for the multiplication in $\mathbb{F}$ (function `multiply`) and for the evaluation of $j\mapsto \omega_j$ (function `omega`). Computing directly in basis $\beta$ can be tempting (`omega` reduces to the identity in this case), but prevents a very efficient implementation of the product; furthermore, uses of the DFT may require to use a specific basis.
  
  `decompose_taylor` is not shown here but the algorithm is described in [1]. Interstingly, it can be implemented recursively or iteratively, and for a similar implementation effort, the recursive implementation exhibits better memory locality and is faster (in addition to being much simpler).
 
