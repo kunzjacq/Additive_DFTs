@@ -25,6 +25,7 @@ public:
   bool has_abm;
   bool has_avx512f;
   bool has_avx512vl;
+  bool has_avx512bw;
 
   cpu_features();
   void print();

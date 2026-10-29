@@ -200,3 +200,51 @@ the 2026-10 CSV (gf2x, plain and optimized curves).
   `-DMG_ROW4=0` disables them.
 - **Large fields.** Truncated DFT loop indexes are `uint64_t`, so word types beyond 64 bits work
   for Cantor-basis construction but not reliably for DFTs.
+
+## Ideas not implemented: AVX-512
+
+None of this is implemented or tested: the development machine (Ryzen 9 5950X, Zen 3) has no
+AVX-512. The notes below come from reading the code and from profiles of the 256-bit version.
+
+**Expected gain depends on the CPU.** Zen 4 runs 512-bit instructions as two 256-bit halves, so
+the raw `vpclmulqdq` throughput per bit would stay the same as with ymm; the gain would come from
+fewer instructions, `vpternlogq` and 32 registers. Zen 5 and Intel server cores (Ice Lake and
+later) have a better chance of a real speedup. On Skylake-X, 512-bit code can lower the clock.
+Intel client cores since Alder Lake have no AVX-512.
+
+**Candidates, most promising first**
+
+1. `eval_degree1` and `product_batch` (`mg_templates.h`, `mg.cpp`, `mg_fused.cpp`) with
+   `_mm512_clmulepi64_epi128`: four carry-less products per instruction, so 8 elements per
+   vector instead of 4 in `eval_degree1`.
+   - The 16-entry reduction table (`mg_lut128`) works unchanged: `vpshufb` operates per 128-bit
+     lane, so the table is simply broadcast (needs AVX512BW).
+   - `vpternlogq` (`_mm512_ternarylogic_epi64`) can merge the chained XORs (`e ^= xe`, `P ^= r`,
+     `Q ^= P`, the final XOR of the reduction) into single instructions. It is also available on
+     xmm/ymm with AVX512VL, so it would help the 256-bit path on CPUs that have it.
+   - `eval_degree1` is bound by `pclmulqdq` throughput, but is only a part of the total time.
+2. Row kernels (`mg_row4_*` and the 16-word row kernels of the optimized variant): 32 zmm
+   registers let a 16-word row (two zmm) and the temporaries stay in registers with fewer
+   spills than with 16 ymm registers.
+3. Direct row products and base case of the optimized variant: they process two rows at once
+   with ymm; four rows would fit in zmm. The Karatsuba on 128-bit digits could batch more digit
+   products per instruction.
+4. Taylor decompositions of rows of 8 and 16 words (`mg_taylor_opt.h`): a row of 8 words is one
+   zmm, 16 words are two. `vpermq`, `vpermt2q`, `valignq` and mask registers would express the
+   shift-and-XOR steps with fewer instructions than the AVX2 blends and permutes.
+5. `expand` and `contract`: `_mm512_cvtepu32_epi64` and 512-bit permutes. Small part of the
+   total time.
+
+**How to add it.** A macro `MG_USE_ZMM_CLMUL`, defined in `mg_templates.h` next to
+`MG_USE_YMM_CLMUL` when the build targets AVX512F, AVX512BW and VPCLMULQDQ, selecting the 512-bit
+code; the 256-bit and 128-bit paths stay as fallbacks. The checks at startup in `product_test` and
+`fft_test` would also have to require AVX512F and AVX512BW. Results should be compared with the
+current paths (`product_test`'s checks against gf2x and the naive product), and timed with
+`product_bench` / `benchmark.sh` on the target CPU.
+
+**CPU detection.** `cpu_features` (`utils.cpp`) reads the AVX512F, AVX512BW and AVX512VL flags
+from leaf 7 (EBX bits 16, 30 and 31), like the BMI, AVX2 and VPCLMULQDQ flags (`has_avx512bw` was
+added; before, `has_avx512f` and `has_avx512vl` were wrongly read from the extended leaf
+`0x80000001`). The code that reads them could not be tested on a CPU that has AVX-512. No check
+uses these flags yet. Like for AVX2, support by the operating system (XCR0 through `xgetbv`) is
+not checked.

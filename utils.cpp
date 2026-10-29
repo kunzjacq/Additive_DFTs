@@ -38,7 +38,8 @@ cpu_features::cpu_features():
   has_avx2(false),
   has_abm(false),
   has_avx512f(false),
-  has_avx512vl(false)
+  has_avx512vl(false),
+  has_avx512bw(false)
 {
   uint32_t info[4];
   cpuid(info, 0, 0);
@@ -61,10 +62,11 @@ cpu_features::cpu_features():
   has_vpclmul = (info[2] & (1uLL << 10)) != 0;
   has_rdseed  = (info[1] & (1uLL << 18)) != 0;
   has_avx2    = (info[1] & (1uLL << 5)) != 0;
+  has_avx512f  = (info[1] & (1uLL << 16)) != 0;
+  has_avx512bw = (info[1] & (1uLL << 30)) != 0;
+  has_avx512vl = (info[1] & (1uLL << 31)) != 0;
   cpuid(info, 0x80000001, 0);
   has_abm = (info[2] & (1uLL << 5)) != 0;
-  has_avx512f  = (info[1] & (1uLL << 16)) != 0;
-  has_avx512vl = (info[1] & (1uLL << 31)) != 0;
 }
 
 void cpu_features::print()
@@ -87,5 +89,6 @@ void cpu_features::print()
   std::cout << "AVX2: " << p(has_avx2) << std::endl;
   std::cout << "Advanced Bit Manipulations (ABM): " << p(has_abm) << std::endl; // for lzcnt and popcnt
   std::cout << "AVX512 foundations: " << p(has_avx512f) << std::endl; // for basic _mm512_ intrinsics such as _mm512_set1_epi{16,32,64}
+  std::cout << "AVX512 Byte and Word instructions: " << p(has_avx512bw) << std::endl; // for _mm512_shuffle_epi8
   std::cout << "AVX512 Vector Length Extensions: " << p(has_avx512vl) << std::endl; // for _mm512_clmulepi64_epi128, together with has_vpclmul
 }
