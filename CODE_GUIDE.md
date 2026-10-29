@@ -134,6 +134,12 @@ a 'pure' implementation).
   unreduced 128-bit clmul results, then reduce (r_k = p_k + p_{k+R-1} + c p_{k+R}), two rows at once in
   a ymm register when `MG_USE_YMM_CLMUL` is defined.
 - `product_batch` is replaced by `mg_ring_rows` when `cut != 0`.
+- Taylor decompositions: `mg_core`, `mg_smalldegree`, `mg_smalldegree_with_buf` and `mg_reverse_core` call
+  `mg_decompose_taylor_opt` and `mg_decompose_taylor_reverse_opt` (`include/mg_taylor_opt.h`) instead of the
+  functions of `mg_templates.h`: two levels of the recursion are merged (8 additions of ranges, two of them in
+  one loop), and rows of 8 and 16 words (t = 2, logstride = 0) are decomposed in AVX2 registers. Same results
+  as the originals (`taylor_test` in `product_test.cpp`); 3 to 6% faster products at 2**18 bits and more.
+  See `taylor_merge.md`.
 - Base case: when the operands have at most 2**(`MG_FUSED_BASE_LOGN` (9)) 64-bit words, the two public functions
   call `base_product` instead (no DFT, no allocation): Karatsuba on carry-less products, on 128-bit digits (2 words)
   kept in vector registers (`mul_digit`: 3 clmuls, then `mul_digits<M>`, unrolled up to 8 digits, and `mul_digits_big`,
@@ -148,6 +154,7 @@ a 'pure' implementation).
 
 ### Tests and utilities
 
+- `include/mg_taylor_opt.h`: optimized Taylor decompositions used by the fused variant (see above).
 - `product_test.cpp` multiplies random polynomials of degree 2^(lsz-1) - 1. The default list is
   `{8..19, 25, 30, 34}`. gf2x comparison is limited to lsz <= 25 (`gf2x_max_logsize`). Settings:
   `test_in_place_variant`, `test_naive_product`, `benchmark`, `min_time` (2 s, runs are timed
