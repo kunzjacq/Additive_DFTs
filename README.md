@@ -1,7 +1,7 @@
 # Additive Discrete Fourier Transforms (DFTs) and application to fast products of binary polynomials
 A C++20 implementation of several additive DFT algorithms over $F_2$, and their application to fast binary polynomial multiplication.
 
-The implementation targets the x86_64 architecture with the SSE2, SSE4.1, POPCNT and PCLMULQDQ instruction sets (the build uses `-march=native`, which also enables AVX2, BMI1 and, on CPUs such as Zen 3+ or Intel Ice Lake+, VPCLMULQDQ; see [Product CPU requirements](#product-cpu-requirements)). Test programs showcase the different algorithms and test their correctness; see [Programs](#programs). See [CODE_GUIDE.md](CODE_GUIDE.md) for a map of the source code.
+The implementation targets the x86_64 architecture with the SSE2, SSE4.1, POPCNT and PCLMULQDQ instruction sets (the build uses `-march=native`, which also enables AVX2, BMI1 and, on CPUs such as Zen 3+ or Intel Ice Lake+, VPCLMULQDQ; see [CPU requirements](#cpu-requirements)). Test programs showcase the different algorithms and test their correctness; see [Programs](#programs). See [CODE_GUIDE.md](CODE_GUIDE.md) for a map of the source code.
 
 Algorithms implemented are: Von zur Gathen - Gerhard algorithm with Cantor bases (also called the Wang-Zhu-Cantor algorithm), and the Mateer-Gao algorithm. Both of them are described in Todd Mateer's Master's Thesis (available at https://tigerprints.clemson.edu/all_dissertations/231/). Reverse algorithms are also implemented.
 
@@ -32,7 +32,7 @@ On an AMD 5950X, the optimized variant is faster than gf2x from $u = 11$, with a
 **Optimizations:**
 - **Fused polynomial product**. Outside of initialization/exit operations, the product performs a DFT, then a pointwise product in $K=\mathbb{F}_{2^{64}}$, then an inverse DFT. These three operations implement a polynomial product in $K$; but the DFT is itself recursive and the last operations before the pointwise product are also DFTs of size $R$ = 4, 16 or 256 words. Let $k=\mathbb{F}_R$ be the subfield of $K$ with $R$ elements. The pointwise products are performed on a set of the form $a+k$ for some $a$. Considered together with the pointwise product and the corresponding inverse DFTs, the last stages of the DFT therefore form small polynomial products in $K[X]$ modulo the polynomial $x^R + x + c$, with $c = a^R + a$, which vanishes on $a+k$. The optimized variant does not perform these DFT stages on rows of 16 words (4 words for the smallest sizes): it computes the product of the rows directly.
 
-  **Implementation.** A row product is computed with Karatsuba on carry-less 64x64-bit products that are left unreduced (the reduction is linear over $\mathbb{F}_2$ and done once at the end), then reduced modulo $x^R + x + c$, which costs one multiplication by $c$ per coefficient since $x^R = x + c$. When the CPU supports it (see [Product CPU requirements](#product-cpu-requirements)), two rows are processed at once with 256-bit `vpclmulqdq`; otherwise a 128-bit version is used. The direct product beats the chain of DFTs for $R = 4$ and $16$ (by a factor of 2 to 3 on a row) but not for $R = 256$, hence the choice of these row sizes. See `CODE_GUIDE.md` for more details.
+  **Implementation.** A row product is computed with Karatsuba on carry-less 64x64-bit products that are left unreduced (the reduction is linear over $\mathbb{F}_2$ and done once at the end), then reduced modulo $x^R + x + c$, which costs one multiplication by $c$ per coefficient since $x^R = x + c$. When the CPU supports it (see [CPU requirements](#cpu-requirements)), two rows are processed at once with 256-bit `vpclmulqdq`; otherwise a 128-bit version is used. The direct product beats the chain of DFTs for $R = 4$ and $16$ (by a factor of 2 to 3 on a row) but not for $R = 256$, hence the choice of these row sizes. See `CODE_GUIDE.md` for more details.
 - **Base case.** For small products (operands of at most $2^{15}$ bits, i.e. 512 64-bit words, so results of up to $2^{16}$ bits), the DFT is not used at all: the product is computed directly by Karatsuba on carry-less 64x64-bit products (one `pclmulqdq` for operands of at most 64 bits, three for 128 bits, and so on). The operands are processed as arrays of 128-bit digits (2 words) kept in vector registers, which makes the additions and the reassembly of the result cheap; this is the organization of the hand-crafted small products of gf2x. This is faster than the DFT-based product up to $2^{16}$ bits (about 1.15 times faster at $2^{16}$, and more than 10 times faster at $2^{8}$, compared to the DFT-based product of the optimized variant), and slower above (1.2 times at $2^{17}$). This crossover was set by experiment (macro `MG_FUSED_BASE_LOGN` in `mg_fused.cpp`; `MG_FUSED_BASE_LOGN=-1` disables the base case).
 - **Taylor decompositions.** The optimized variant also uses faster Taylor decompositions (`include/mg_taylor_opt.h`): two levels of the recursion are merged into one step, and the decomposition of rows of 8 and 16 words is done in AVX2 registers. They are worth 3 to 6% of the time of a product at sizes of $2^{18}$ bits and more (where the DFT is used), and give the same results as the original functions. The plain variant still uses the original ones. See [taylor_merge.md](taylor_merge.md).
 
@@ -122,11 +122,7 @@ It is a direct implementation of the Mateer-Gao DFT, kept as a reference, as it 
 
 The optimized variant is 13 to 15 times faster than the plain one up to $2^{10}$ bits, 2.9 to 11 times faster from $2^{11}$ to $2^{15}$, 2 times faster at $2^{16}$, and the difference then decreases: 1.4 to 1.5 times at $2^{17}$ to $2^{20}$, 1.2 times at $2^{27}$ to $2^{30}$, and 1.1 times from $2^{31}$ on.
 
-**Where the differences come from.** They follow from the three optimizations of the optimized variant described above:
-* *Small sizes (up to $2^{16}$ bits):* the plain variant always runs the full DFT machinery (expansion of the operands into 64-bit words, three DFTs, pointwise product, contraction), whose fixed cost dominates for small products, whereas the optimized variant multiplies directly with Karatsuba on carry-less products (base case). This is the source of the factors of 10 and more.
-* *Medium and large sizes:* the optimized variant replaces the last stages of the DFTs, on rows of 16 words (4 for the smallest sizes), together with the pointwise product, by a direct product of the rows modulo $x^R + x + c$, which is cheaper than the chain of DFT, product and inverse DFT on such a row (by a factor of 2 to 3 on a row). The faster Taylor decompositions add 3 to 6%. The gain is the same fraction of work at each size, but it is a smaller part of the total as the DFT grows, since the number of stages grows with the size while the number of stages replaced is fixed; this is why the advantage decreases from 1.4 to 1.1 as the size grows.
-
-### Product memory requirements
+### Memory requirements
 
 The functions of `mg.h` and `mg_fused.h` have the same memory requirements (the base case of the optimized variant, for small products, only uses a few tens of KB of stack).
 
@@ -148,7 +144,7 @@ The functions of `mg.h` and `mg_fused.h` have the same memory requirements (the 
 
 For $u = 37$, i.e. a product of two polynomials of degree $2^{36}-1$, each input polynomial is 8 GiB and the result is 16 GiB. With the out-of-place variant, buffers of $2 \times 2 \times 16$ GiB $= 64$ GiB are additionally needed, for a total of 96 GiB. With the in-place variant, the buffer for $p_1$ and the result is $2 \times 16$ GiB $= 32$ GiB, $p_2$ takes 8 GiB, and an additional array of $2 \times 8$ GiB $= 16$ GiB is needed. Overall $8 + 16 + 32 = 56$ GiB of RAM are needed.
 
-### Product CPU requirements
+### CPU requirements
 
 The polynomial product code uses a fast implementation of multiplication in $\mathrm{GF}(2^{64})$, which is implemented multiple ways in the source, using PCLMULQDQ, POPCNT and SSE intrinsics. The 256-bit `vpclmulqdq` code path is used when the build targets VPCLMULQDQ (see `MG_USE_YMM_CLMUL` in `include/mg_templates.h`); the programs check at startup that the CPU supports the instruction sets the build targets (see [Programs](#programs)).
 
@@ -156,25 +152,13 @@ The polynomial product code uses a fast implementation of multiplication in $\ma
 
 Cantor bases are available for field sizes above $2^{64}$ thanks to the optional use of `Boost::multiprecision` which implements large integers (enabled with the CMake option `-D USE_BOOST=ON`, off by default). With this library, the cantor basis test program tests the construction in finite fields of size up to $2^{2048}$. In theory, truncated Wang-Zhu-Cantor DFT could work in such large fields, however it is not tested and does not work due to overflows in the handling of loop indexes, which are all of type `uint64_t`. There is probably little interest to use these field sizes for truncated DFTs; full DFTs are of course totally unrealistic in these cases.
 
-## Build instructions
-gcc or clang are able to build all targets. 
-
-The build process uses Cmake. For instance, an optimized build with gcc using a single-configuration generator such as make, in build directory \$BUILD_DIR and source dir \$SOURCE_DIR, is achieved with:
-
-    cmake -S $SOURCE_DIR -B $BUILD_DIR -D CMAKE_BUILD_TYPE=Release
-    cmake --build $BUILD_DIR --parallel
-
-Multi-configuration generators need different options; see https://stackoverflow.com/questions/7724569/debug-vs-release-in-cmake/64719718#64719718. 
-
-Target `product_test` requires a compiled version of gf2x for the target platform, searched for in a subdirectory of the source dir named `lib/`, then in `$CUSTOM_LIBS/lib` if an environment variable `CUSTOM_LIBS` is defined, then in the default library directories. If gf2x is not found, CMake prints a warning, `product_test` is not built, and the other targets (including `product_bench`) are still built. Link-time optimization is on by default (disable with `-D LTO=OFF`).
-
 ## Programs
 
-The build produces four programs, described below, in the build directory (see above). The script `benchmark.sh` runs the product benchmark.
+The build produces four programs, described below, in the build directory (see [Build instructions](#build-instructions)). The script `benchmark.sh` runs the product benchmark.
 
 ### `product_test`: products of binary polynomials, checked against gf2x
 
-Multiplies random polynomials of degree $2^{u-1} - 1$ (the result has $2^u$ bits) with the Mateer-Gao product, times it, and compares the result with the one of gf2x. It is only built if gf2x is found (see above). It requires AVX2, BMI1, POPCNT and PCLMULQDQ (and VPCLMULQDQ when the build targets it), and exits with code 2 otherwise; it exits with code 0 if all comparisons succeeded, and 1 on a wrong result or invalid options.
+Multiplies random polynomials of degree $2^{u-1} - 1$ (the result has $2^u$ bits) with the Mateer-Gao product, times it, and compares the result with the one of gf2x. It is only built if gf2x is found (see [Build instructions](#build-instructions)). It requires AVX2, BMI1, POPCNT and PCLMULQDQ (and VPCLMULQDQ when the build targets it), and exits with code 2 otherwise; it exits with code 0 if all comparisons succeeded, and 1 on a wrong result or invalid options.
 
     product_test --sizes LIST [--optimized] [--gf2x-max N] [--no-degree-test] [--help]
 
@@ -220,4 +204,27 @@ Builds `product_test` (or `product_bench` if gf2x is not found) in a separate bu
 * `-b BUILD_DIR`: build directory (default `build-bench`).
 * `-y`: do not ask for confirmation.
 
-If gf2x is not found (it is searched for in `gf2x/install` of the source directory, or in `$CUSTOM_LIBS` if defined), the script prints a warning: gf2x is not timed, and the results of the products are not checked.
+If `gf2x` was not found at build time, `gf2x` is not timed, and the results of the products are not checked.
+
+## Build instructions
+gcc or clang are able to build all targets. 
+
+The build process uses CMake (3.12 or later). There are two kinds of CMake generators, which select the build type (Release, Debug...) differently:
+
+* **Single-configuration generators** (Unix Makefiles, Ninja): the build type is chosen when the project is *configured*, with `CMAKE_BUILD_TYPE`, and a build directory holds only one build type. If it is not given, it defaults to `Release`. For instance, with make, in build directory `$BUILD_DIR` and source directory `$SOURCE_DIR` (add `-G Ninja` to the first command to use Ninja):
+
+      cmake -S $SOURCE_DIR -B $BUILD_DIR -D CMAKE_BUILD_TYPE=Release
+      cmake --build $BUILD_DIR --parallel
+
+  The programs are then in `$BUILD_DIR`.
+
+* **Multi-configuration generators** (Visual Studio, Xcode, Ninja Multi-Config, the last one needs CMake 3.17 or later): the build directory is configured once for all build types, `CMAKE_BUILD_TYPE` is ignored, and the build type is chosen when *building*, with `--config`. For instance, with Ninja Multi-Config:
+
+      cmake -S $SOURCE_DIR -B $BUILD_DIR -G "Ninja Multi-Config"
+      cmake --build $BUILD_DIR --config Release --parallel
+
+  The programs are in a subdirectory named after the build type, here `$BUILD_DIR/Release/`. Another build type can be built in the same directory with the same command and another `--config` (`Debug` or `RelWithDebInfo`; the programs then go to `$BUILD_DIR/Debug/`, etc.). A build without `--config` uses the first configuration of the generator (`Debug` with Ninja Multi-Config), which is much slower and not suited to benchmarks: do not forget `--config Release`.
+
+Target `product_test` requires a compiled version of `gf2x` for the target platform, searched for in a subdirectory of the source dir named `lib/`, then in `$CUSTOM_LIBS/lib` if an environment variable `CUSTOM_LIBS` is defined, then in the default library directories. If `gf2x` is not found, CMake prints a warning, `product_test` is not built. The other targets (including `product_bench`) are still built. 
+
+Link-time optimization is on by default; disable with `-D LTO=OFF` at configuration.
