@@ -11,7 +11,8 @@ default).
 
 | Target | Sources | Built with |
 |---|---|---|
-| `product_test` | `product_test.cpp`, `utils.cpp`, `libfft/mg.cpp` | all compilers; links `gf2x` for GCC/Clang only |
+| `product_test` | `product_test.cpp`, `utils.cpp`, `libfft/mg.cpp`, `libfft/mg_fused.cpp` | GCC/Clang only; needs `gf2x` |
+| `product_bench` | same source as `product_test`, compiled with `PRODUCT_BENCH` | GCC/Clang only; no `gf2x`, timings only |
 | `fft_test` | `fft_test.cpp`, `utils.cpp`, `libfft/additive_fft.cpp`, `libfft/mg.cpp`, `libcantor/*.cpp` | GCC/Clang only |
 | `cantor_basis_test` | `cantor_test.cpp`, `libcantor/*.cpp` | GCC/Clang only |
 
@@ -117,7 +118,7 @@ This is what `product_test` benchmarks. It is specialized for GF(2^64) and uses 
   public entry points. `naive_product` is a PCLMUL schoolbook reference.
 - Compile-time switch: `GRAY_CODE` (off) selects a Gray-code iteration order over the rows.
 
-### The fused variant (`mg_fused.h`, `libfft/mg_fused.cpp`)
+### The optimized variant (`mg_fused.h`, `libfft/mg_fused.cpp`)
 
 A copy of `mg.cpp` in namespace `mg_fused`, with the following changes (the original is meant to stay
 a 'pure' implementation).
@@ -154,9 +155,10 @@ a 'pure' implementation).
 
 ### Tests and utilities
 
-- `include/mg_taylor_opt.h`: optimized Taylor decompositions used by the fused variant (see above).
-- `product_test.cpp` multiplies random polynomials of degree 2^(lsz-1) - 1. The default list is
-  `{8..19, 25, 30, 34}`. gf2x comparison is limited to lsz <= 25 (`gf2x_max_logsize`). Settings:
+- `include/mg_taylor_opt.h`: optimized Taylor decompositions used by the optimized variant (see above).
+- `product_test.cpp` multiplies random polynomials of degree 2^(lsz-1) - 1. The sizes are given by the
+  required option `--sizes` (for instance `8-19,25,30`). The gf2x comparison is done at all sizes, or only up
+  to `--gf2x-max` (`gf2x_max_logsize`). Settings:
   `test_in_place_variant`, `test_naive_product`, `benchmark`, `min_time` (2 s, runs are timed
   by batches of at least `batch_min_time` = 1 ms) and `max_runs`. Exit code 0 means all comparisons passed. It requires the CPU flags AVX2, PCLMULQDQ,
   POPCNT and BMI1, and exits with code 2 otherwise.
@@ -175,10 +177,10 @@ a 'pure' implementation).
 ### Data files
 
 `2026-10-results_in_place.csv` holds the benchmark numbers of the README tables (output of
-`benchmark.sh`: gf2x, plain and fused times for each size); `2020-10-results_not_in_place.csv`,
+`benchmark.sh`: gf2x, plain and optimized times for each size); `2020-10-results_not_in_place.csv`,
 `2021-05-results_in_place.csv` and `runtimes.ods` are older results (3900X; a `0` in the gf2x column
 means out of memory). `times.png` and `speed_ratio.png` are the plots the README embeds, drawn from
-the 2026-10 CSV (gf2x, plain and fused curves).
+the 2026-10 CSV (gf2x, plain and optimized curves).
 
 ## Things to know
 

@@ -5,6 +5,7 @@
 #include <memory> // for unique_ptr
 #include <vector>
 #include <string>
+#include <climits>   // for UINT_MAX
 #include <algorithm> // for copy, fill, equal, max
 
 #include "timer.h"
@@ -14,30 +15,26 @@
 #include "mg_taylor_opt.h"
 #include "utils.h"
 
-#include "gf2x.h"
-
 using namespace std;
 
-// test results against gf2x (unavailable with MSVC)
-#ifdef __GNUC__
-constexpr bool do_gf2x = true;
-#else
-#ifdef _MSC_VER
+// product_bench (PRODUCT_BENCH defined): only measures run times, does not use gf2x and does not
+// check any result. product_test: also times gf2x and checks the results against it.
+#ifdef PRODUCT_BENCH
 constexpr bool do_gf2x = false;
 #else
-#error "unsupported compiler"
-#endif
+#include "gf2x.h"
+constexpr bool do_gf2x = true;
 #endif
 // choose between the plain Mateer-Gao product (mg.h) and the variant with fused small stages (mg_fused.h)
 // (default; see command line options in main)
-static bool use_fused_variant = false;
+static bool use_optimized_variant = false;
 // choose between in-place or out-of-place product variants of Mateer-Gao product
 constexpr bool test_in_place_variant = true;
 constexpr bool test_naive_product = false; // test or benchmark a naive implementation of polynomial
 // product instead of the DFT-based one. Forces an out-of-place computation.
 
-// largest size at which the result is compared with gf2x's (default; see command line options in main)
-static unsigned int gf2x_max_logsize = 25;
+// largest size at which the result is compared with gf2x's (default: no limit; see command line options in main)
+static unsigned int gf2x_max_logsize = UINT_MAX;
 constexpr unsigned int naive_max_logsize = 18;
 
 
@@ -223,7 +220,7 @@ static bool degree_test(uint64_t max_degree)
         if(!ok)
         {
           errors++;
-          if(errors <= 10) cout << " ** Wrong result ** (" << (variant == 0 ? "plain" : "fused") << ") d1 = " << d1 << ", d2 = " << d2 << endl;
+          if(errors <= 10) cout << " ** Wrong result ** (" << (variant == 0 ? "plain" : "optimized") << ") d1 = " << d1 << ", d2 = " << d2 << endl;
         }
       }
     }
@@ -291,6 +288,7 @@ static bool mateer_gao_product_test(
       p2[i] = draw();
     }
     uint32_t e_sz = 0;
+#ifndef PRODUCT_BENCH
     if constexpr(do_gf2x)
     {
       run_count = 0;
@@ -308,6 +306,7 @@ static bool mateer_gao_product_test(
         for(uint64_t i = 0; i < sz/64; i++) p3[i] = 0;
       }
     }
+#endif
     if(delayed_large_alloc)
     {
       try
@@ -333,7 +332,7 @@ static bool mateer_gao_product_test(
     {
       if constexpr(compute_in_place)
       {
-        if(use_fused_variant) mg_fused::mg_binary_polynomial_multiply_in_place(p1, p2, sz/2 - 1, sz/2 - 1);
+        if(use_optimized_variant) mg_fused::mg_binary_polynomial_multiply_in_place(p1, p2, sz/2 - 1, sz/2 - 1);
         else mg_binary_polynomial_multiply_in_place(p1, p2, sz/2 - 1, sz/2 - 1);
       }
       else
@@ -344,7 +343,7 @@ static bool mateer_gao_product_test(
         }
         else
         {
-          if(use_fused_variant) mg_fused::mg_binary_polynomial_multiply(p1, p2, p3, sz/2 - 1, sz/2 - 1);
+          if(use_optimized_variant) mg_fused::mg_binary_polynomial_multiply(p1, p2, p3, sz/2 - 1, sz/2 - 1);
           else mg_binary_polynomial_multiply(p1, p2, p3, sz/2 - 1, sz/2 - 1);
         }
       }
@@ -386,10 +385,12 @@ static bool mateer_gao_product_test(
 static void usage(const char* name)
 {
   cout << "usage: " << name << " [options]" << endl
-       << "  --fused            use the fused variant of the product (mg_fused.h) instead of the plain one" << endl
-       << "  --sizes LIST       output sizes (log2 of the number of bits) to test, e.g. 8-19,25,30,34 (default)" << endl
-       << "  --gf2x-max N       compare with gf2x (and time it) up to size N only (default " << gf2x_max_logsize << ")" << endl
+       << "  --optimized        use the optimized variant of the product (mg_fused.h) instead of the plain one" << endl
+       << "  --sizes LIST       output sizes (log2 of the number of bits) to test, e.g. 8-19,25,30,34 (required)" << endl
+#ifndef PRODUCT_BENCH
+       << "  --gf2x-max N       compare with gf2x (and time it) up to size N only (default: all sizes)" << endl
        << "  --no-degree-test   do not run the tests on small degrees" << endl
+#endif
        << "  --help             this help" << endl
        << "The in-place product of size 2**u bits needs 3.5 * 2**(u-3) bytes of RAM (56 GiB for u = 37)." << endl;
 }
@@ -421,20 +422,27 @@ static bool parse_sizes(const string& s, vector<unsigned int>& sizes)
 int main(int argc, char** argv)
 {
   // log_sz = 7 (product of 2 64-bit polynomials) is covered by degree_test
-  vector<unsigned int> log_sz = {8,9,10,11,12,13,14,15,16,17,18,19,25,30,34};
+  vector<unsigned int> log_sz;
+#ifdef PRODUCT_BENCH
+  const bool run_degree_test = false;
+#else
   bool run_degree_test = true;
+#endif
   for(int i = 1; i < argc; i++)
   {
     const string a = argv[i];
-    if(a == "--fused") use_fused_variant = true;
+    if(a == "--optimized") use_optimized_variant = true;
+#ifndef PRODUCT_BENCH
     else if(a == "--no-degree-test") run_degree_test = false;
     else if(a == "--gf2x-max" && i + 1 < argc) gf2x_max_logsize = (unsigned int) stoul(argv[++i]);
+#endif
     else if(a == "--sizes" && i + 1 < argc)
     {
       if(!parse_sizes(argv[++i], log_sz)) {cout << "invalid list of sizes" << endl; return 1;}
     }
     else {usage(argv[0]); return a == "--help" ? 0 : 1;}
   }
+  if(log_sz.empty()) {cout << "the option --sizes is required" << endl; usage(argv[0]); return 1;}
   cpu_features f;
   bool cpu_has_required_flags = f.has_popcnt && f.has_bmi1 && f.has_avx2 && f.has_pclmul;
 #if defined(__VPCLMULQDQ__) && defined(__AVX2__)
@@ -446,7 +454,10 @@ int main(int argc, char** argv)
     cout << "cpu flags required not present (AVX2, PCMULQDQ, POPCNT, BMI1, and VPCLMULQDQ if the build targets it). Exiting" << endl;
     exit(2);
   }
-  cout << "Variant: " << (use_fused_variant ? "fused" : "plain") << endl;
+  cout << "Variant: " << (use_optimized_variant ? "optimized" : "plain") << endl;
+#ifdef PRODUCT_BENCH
+  cout << "Benchmark only: results are not checked" << endl;
+#endif
   bool mateer_gao_error = run_degree_test ? (taylor_test() | degree_test(300)) : false;
   mateer_gao_error |= mateer_gao_product_test(log_sz.data(), (unsigned int) log_sz.size());
   if(mateer_gao_error) cout << "Mateer-Gao product test failed" << endl;

@@ -9,7 +9,7 @@
 
 /**
  * Optimized versions of mg_decompose_taylor_recursive and mg_decompose_taylor_reverse_recursive
- * (see mg_templates.h for their specification), used by the fused variant of the product
+ * (see mg_templates.h for their specification), used by the optimized variant of the product
  * (libfft/mg_fused.cpp). The results are identical to those of the original functions.
  *
  * Two optimizations, described in taylor_merge.md:

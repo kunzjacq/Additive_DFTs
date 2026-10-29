@@ -1,4 +1,4 @@
-log2_size,gf2x,plain,fused,fused_over_plain_speedup,gf2x_over_fused_ratio
+log2_size,gf2x,plain,optimized,optimized_over_plain_speedup,gf2x_over_optimized_ratio
 8,6.45119e-09,9.54637e-08,6.49672e-09,14.69,0.99
 9,9.51591e-09,1.71615e-07,1.28758e-08,13.33,0.74
 10,2.01615e-08,3.52355e-07,2.41678e-08,14.58,0.83

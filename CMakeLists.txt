@@ -1,117 +1,80 @@
-cmake_minimum_required(VERSION 3.9)
+cmake_minimum_required(VERSION 3.12)
 
-project(additive_dfts)
+project(additive_dfts LANGUAGES CXX)
 
-include(TestBigEndian)
+if(NOT CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang)$")
+  message(FATAL_ERROR "Only gcc and clang are supported")
+endif()
 
-message("CMAKE_SYSTEM_NAME: ${CMAKE_SYSTEM_NAME}")
-set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
-set(CMAKE_VERBOSE_MAKEFILE on)
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Link-time optimization
 option(LTO "Link-time optimization" ON)
-
-#option to use boost for large integers. To use boost: set the option,
-# and if Cmake does not find Boost path (esp. under Windows), add to cmake the option
-# -D BOOST_ROOT=<boost path>
-#Windows example:
-#-D BOOST_ROOT=C:\\boost_1_78_0
-
-option(USE_BOOST "Use Boost for large integers" OFF)
-
 if(LTO)
-  message("Turning on link-time optimization")
-  set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
-  # per-target setting:
-  #  set_property(TARGET <target name> PROPERTY INTERPROCEDURAL_OPTIMIZATION True)
+  set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
 endif()
 
-set(LOCAL_LIB_DIR "${PROJECT_SOURCE_DIR}/lib")
-
-if(IS_DIRECTORY ${LOCAL_LIB_DIR})
-  list(APPEND LIB_DIRS "${LOCAL_LIB_DIR}")
-endif()
-
-if("$ENV{CUSTOM_LIBS}" STREQUAL "")
-else()
-  list(APPEND LIB_DIRS "$ENV{CUSTOM_LIBS}/lib")
-endif()
-
-set(CMAKE_CXX_STANDARD 20) #for assume_aligned
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_C_STANDARD 99)
-set(CMAKE_C_STANDARD_REQUIRED ON)
-
-TEST_BIG_ENDIAN(BE)
-if(BE EQUAL 1)
-#if(NOT (CMAKE_CXX_BYTE_ORDER EQUAL "LITTLE_ENDIAN")) #alternative test, cmake 3.20 or later
-#does not require module TestBigEndian
-  message(FATAL_ERROR "This project only works on a little endian architecture")
-endif()
-
-if ((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") OR (CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
-  add_compile_options(-Wall -Wextra)
-  ## architecture flags strictly needed to compile the code: -mavx2 -mpclmul -mbmi
-  add_compile_options(-march=native -mtune=native)
-  if(MINGW)
-      add_compile_definitions(__USE_MINGW_ANSI_STDIO=1)
-  endif()
-  ## Additional optimization or debug options
-  #add_compile_options("$<$<CONFIG:RELEASE>:-ftree-vectorize;-ftree-vectorizer-verbose=4;-fno-rtti;-Wl,--as-needed>")
-  #add_compile_definitions("$<$<CONFIG:DEBUG>:_DEBUG>")
-elseif (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-  add_compile_options(/arch:AVX2 /favor:AMD64)
-endif()
-
+# Large integers from Boost (header-only part of Boost::multiprecision) enable Cantor bases in
+# fields larger than 2**64. If CMake does not find Boost, add the option -D BOOST_ROOT=<boost path>
+option(USE_BOOST "Use Boost for large integers" OFF)
 if(USE_BOOST)
-  message("BOOST_ROOT: ${BOOST_ROOT}")
   find_package(Boost 1.65)
-  message("Boost librairies: ${Boost_LIBRARIES}")
-  message("Boost include dirs: ${Boost_INCLUDE_DIR}")
 endif()
-
-configure_file("defs.h.in" "defs.h")
-
-add_executable(product_test
- "product_test.cpp"
- "utils.cpp"
- "libfft/mg.cpp"
- "libfft/mg_fused.cpp"
-)
-
-target_include_directories(product_test PRIVATE ${CMAKE_CURRENT_BINARY_DIR} "${PROJECT_SOURCE_DIR}/include") 
-# CMAKE_CURRENT_BINARY_DIR added for defs.h
-
-if ((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") OR (CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
-  target_link_libraries(product_test gf2x)
-  target_link_directories(product_test PRIVATE "${LIB_DIRS}")
-
-  add_executable(cantor_basis_test
-    "cantor_test.cpp"
-    "libcantor/cantor_basis_bare.cpp"
-    "libcantor/cantor_basis_full.cpp"
-    "libcantor/helpers.cpp"
-  )
-  target_include_directories(cantor_basis_test PRIVATE ${CMAKE_CURRENT_BINARY_DIR} "${PROJECT_SOURCE_DIR}/include")
-
-  add_executable(fft_test
-   "fft_test.cpp"
-   "utils.cpp"
-   "libfft/additive_fft.cpp"
-   "libfft/mg.cpp"
-   "libcantor/cantor_basis_bare.cpp"
-   "libcantor/cantor_basis_full.cpp"
-   "libcantor/helpers.cpp"
-  )
-  target_include_directories(fft_test PRIVATE ${CMAKE_CURRENT_BINARY_DIR} "${PROJECT_SOURCE_DIR}/include")
-endif()
-
 if(Boost_FOUND)
-  message("Using Boost for large integers")
-  target_link_libraries(cantor_basis_test ${Boost_LIBRARIES})
-  target_include_directories(cantor_basis_test PRIVATE "${Boost_INCLUDE_DIR}")
-  target_link_libraries(fft_test ${Boost_LIBRARIES})
-  target_include_directories(fft_test PRIVATE "${Boost_INCLUDE_DIR}")
+  message(STATUS "Using Boost for large integers")
 else()
-  message("Boost large integers not available")
+  message(STATUS "Boost large integers not available")
+endif()
+configure_file(defs.h.in defs.h) # defines Boost_FOUND if relevant
+
+# Compiler settings shared by all targets.
+# The code needs AVX2, PCLMULQDQ and BMI1 at least, and uses VPCLMULQDQ if available
+# (-march=native selects all the features of the build machine).
+add_library(common INTERFACE)
+target_compile_features(common INTERFACE cxx_std_20) # for assume_aligned
+target_compile_options(common INTERFACE -Wall -Wextra -march=native)
+target_include_directories(common INTERFACE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_BINARY_DIR}")
+if(Boost_FOUND)
+  target_link_libraries(common INTERFACE Boost::boost)
 endif()
 
+# Cantor bases
+add_library(cantor STATIC
+  libcantor/cantor_basis_bare.cpp
+  libcantor/cantor_basis_full.cpp
+  libcantor/helpers.cpp
+)
+target_link_libraries(cantor PUBLIC common)
+
+# Mateer-Gao DFT in GF(2**64) and product of binary polynomials
+add_library(mg STATIC
+  libfft/mg.cpp
+  libfft/mg_fused.cpp
+  utils.cpp
+)
+target_link_libraries(mg PUBLIC common)
+
+add_executable(cantor_basis_test cantor_test.cpp)
+target_link_libraries(cantor_basis_test cantor)
+
+add_executable(fft_test fft_test.cpp libfft/additive_fft.cpp)
+target_link_libraries(fft_test cantor mg)
+
+# product_bench only measures the run times of the products
+add_executable(product_bench product_test.cpp)
+target_compile_definitions(product_bench PRIVATE PRODUCT_BENCH)
+target_link_libraries(product_bench mg)
+
+# product_test also checks the products against gf2x (and times it); gf2x is searched for in
+# <source>/lib, in $CUSTOM_LIBS/lib, and in the default library directories
+find_library(GF2X_LIBRARY gf2x HINTS "${PROJECT_SOURCE_DIR}/lib" "$ENV{CUSTOM_LIBS}/lib")
+if(GF2X_LIBRARY)
+  add_executable(product_test product_test.cpp)
+  target_link_libraries(product_test mg "${GF2X_LIBRARY}")
+else()
+  message(WARNING "gf2x library not found: product_test will not be built, only product_bench "
+                  "(see README.md; set the environment variable CUSTOM_LIBS if needed)")
+endif()

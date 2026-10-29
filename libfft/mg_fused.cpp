@@ -2,12 +2,7 @@
 #include <algorithm> // for min, max
 
 #include <immintrin.h>
-#ifdef _MSC_VER
-#include <malloc.h>
-#define alloca _alloca
-#else
 #include <alloca.h>
-#endif
 #include "mg_fused.h"
 
 #include "mg_templates.h"

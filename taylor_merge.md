@@ -1,6 +1,6 @@
 # Faster Taylor decompositions: merging two levels, and a row kernel
 
-Status: **applied to the fused variant of the product** (`libfft/mg_fused.cpp`), through the functions of
+Status: **applied to the optimized variant of the product** (`libfft/mg_fused.cpp`), through the functions of
 `include/mg_taylor_opt.h`; the plain variant (`libfft/mg.cpp`) still uses the original functions of
 `include/mg_templates.h`. See [algo_fft_en.md](algo_fft_en.md), section "Taylor decomposition", for the
 algorithm itself (notations: $\tau = 2^t$, $n$ the size of the polynomial, $m = n/2$, $\delta = m/\tau$,
@@ -16,7 +16,7 @@ The Taylor decompositions (`mg_decompose_taylor_recursive` and `mg_decompose_tay
 Measured on a Ryzen 9 5950X by replacing them with no-ops (the results are then wrong, but the running time
 of the rest does not depend on the data), in-place balanced products of $2^u$ bits:
 
-| $u$ | plain variant | fused variant (before the optimizations) |
+| $u$ | plain variant | optimized variant (before the optimizations) |
 |---|---|---|
 | 10 | 14% | 0% (base case, no DFT) |
 | 12 | 24% | 0% |
@@ -39,12 +39,12 @@ a given $\tau$ were free (upper bounds, measured by replacing them with no-ops; 
 | 18 | plain | 3% | 14% | 3% | 28% |
 | 20 | plain | 2% | 13% | 4% | 27% |
 | 24 | plain | 4% | 12% | 5% | 27% |
-| 18 | fused | 1% | 1% | 8% | 16% |
-| 20 | fused | 1% | 1% | 9% | 16% |
-| 24 | fused | 3% | 4% | 9% | 19% |
+| 18 | optimized | 1% | 1% | 8% | 16% |
+| 20 | optimized | 1% | 1% | 9% | 16% |
+| 24 | optimized | 3% | 4% | 9% | 19% |
 
 ($\tau = 4$ is the Taylor decomposition of rows of 8 and 16 words and of the corresponding interleaved
-columns; the fused variant skips most of the rows of 16 words, hence its low value.)
+columns; the optimized variant skips most of the rows of 16 words, hence its low value.)
 
 Each level of the recursion is a pass over the array. The first idea is to do two levels at once, to reduce the
 number of memory operations; the second is to do the narrowest decompositions in registers.
@@ -135,7 +135,7 @@ variants (the plain variant does not use the new functions).
 Throughput of whole in-place products, new over original (best of 3 runs of 2 seconds, same process;
 prototypes measured before the code was added to the tree):
 
-| $u$ | plain, merge | plain, row kernel | plain, both | fused, both |
+| $u$ | plain, merge | plain, row kernel | plain, both | optimized, both |
 |---|---|---|---|---|
 | 12 | 1.04 | 1.08 | 1.17 | 1.00 |
 | 16 | 1.06 | 1.04 | 1.11 | 1.00 |
@@ -144,10 +144,10 @@ prototypes measured before the code was added to the tree):
 | 22 | 1.04 | 1.03 | 1.10 | 1.03 |
 | 24 | 1.06 | 1.03 | 1.09 | 1.05 |
 
-(For the fused variant, there is no gain for $u \leq 16$ as it does not use the DFT there. At $u = 30$,
-one product of the fused variant takes 1.366 s with the original functions, and 1.283 s with both
+(For the optimized variant, there is no gain for $u \leq 16$ as it does not use the DFT there. At $u = 30$,
+one product of the optimized variant takes 1.366 s with the original functions, and 1.283 s with both
 optimizations (1.06 times faster); the plain variant takes 1.552 s and 1.444 s (1.07 times faster).)
-In the tree (fused variant only; old and new code built with the same flags, minimum of 3 alternating runs), the
+In the tree (optimized variant only; old and new code built with the same flags, minimum of 3 alternating runs), the
 products are 1.06 times faster at $u = 18$, 1.05 at $u = 20$ and 22, 1.03 at $u = 24$, 1.04 at $u = 26$ and 1.05
 at $u = 28$ and 30.
 The plain variant is not modified by the tree: the gains in its column are those of the prototype, which could
@@ -155,7 +155,7 @@ be obtained by using the new functions in `mg.cpp` too.
 
 The gains are modest because the Taylor decompositions are about 30% of the time at large sizes, and the
 optimizations remove part of them. The row kernel only concerns the rows ($\text{logstride} = 0$), the
-interleaved columns with $\tau = 4$ remain, and the fused variant skips most of the rows of 16 words.
+interleaved columns with $\tau = 4$ remain, and the optimized variant skips most of the rows of 16 words.
 
 ## Experiments without gain
 

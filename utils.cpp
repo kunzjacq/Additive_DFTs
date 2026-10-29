@@ -2,21 +2,10 @@
 
 // see https://en.wikipedia.org/wiki/CPUID
 
-//gcc (windows or linux)
-#ifdef __GNUC__
 #include <cpuid.h>
 static void cpuid(uint32_t out[4], int32_t eax, int32_t ecx){
   __cpuid_count(eax, ecx, out[0], out[1], out[2], out[3]);
 }
-
-#else
-// cl
-#include <Windows.h>
-#include <intrin.h>
-static void cpuid(uint32_t out[4], int32_t eax, int32_t ecx){
-  __cpuidex((int*)out, eax, ecx);
-}
-#endif
 
 template <>
 void print_value(const uint8_t& p_data)

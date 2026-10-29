@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Full benchmark of the binary polynomial products: gf2x, Mateer-Gao ("plain"), and the fused
-# variant of Mateer-Gao ("fused"), for output sizes 2**8 to 2**MAX bits, in-place variants.
+# Full benchmark of the binary polynomial products: gf2x, Mateer-Gao ("plain"), and the optimized
+# variant of Mateer-Gao ("optimized"), for output sizes 2**8 to 2**MAX bits, in-place variants.
 #
 # The largest sizes need a lot of RAM: the in-place product of size 2**u bits needs
 # 3.5 * 2**(u-3) bytes (14 GiB for u = 35, 28 GiB for u = 36, 56 GiB for u = 37), so for the
@@ -11,9 +11,11 @@
 # Typical duration for sizes 8 to 37 with gf2x up to size 35: about 45 minutes, of which about
 # 15 minutes for gf2x at sizes 34 and 35, and 15 minutes for sizes 36 and 37.
 #
-# Needs a compiled gf2x (see README.md): by default in ./gf2x/install (CUSTOM_LIBS=<dir> to change).
+# gf2x (see README.md) is optional: by default it is searched for in ./gf2x/install (CUSTOM_LIBS=<dir> to
+# change). If it is not found, product_bench is used instead of product_test: only the Mateer-Gao products
+# are timed (the gf2x columns are empty) and the results are not checked.
 #
-# Results: in directory OUT (default bench-results/<date>): plain.log and fused.log (output of
+# Results: in directory OUT (default bench-results/<date>): plain.log and optimized.log (output of
 # product_test), results.csv, info.txt (machine description); the table is also printed.
 #
 # usage: ./benchmark.sh [-s MIN] [-m MAX] [-g GF2X_MAX] [-o OUT] [-b BUILD_DIR] [-y]
@@ -78,7 +80,7 @@ if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && [ "$MAX" -ge 36 ]; then
   echo "         For sizes of 2**36 and more, run this script from a text console instead."
 fi
 
-echo "Sizes: $MIN to $MAX (gf2x up to $GF2X_MAX); available RAM: $(gib "$avail") GiB;" \
+echo "Sizes: $MIN to $MAX (gf2x, if available, up to $GF2X_MAX); available RAM: $(gib "$avail") GiB;" \
      "needed for size $MAX: $(gib "$(need "$MAX")") GiB."
 echo "Output directory: $OUT"
 if [ "$YES" -ne 1 ]; then
@@ -89,9 +91,18 @@ fi
 # ---- build
 if [ -z "${CUSTOM_LIBS:-}" ] && [ -d "$SRC/gf2x/install" ]; then export CUSTOM_LIBS="$SRC/gf2x/install"; fi
 cmake -S "$SRC" -B "$BUILD" -D CMAKE_BUILD_TYPE=Release > /dev/null
-cmake --build "$BUILD" --parallel --target product_test > "$BUILD/build.log" 2>&1 \
-  || { echo "build failed, see $BUILD/build.log (is gf2x installed? see README.md)"; exit 1; }
-BIN="$BUILD/product_test"
+# product_test (which times gf2x and checks the results against it) is only built if gf2x was found;
+# otherwise, product_bench is used and only the Mateer-Gao products are timed.
+if grep -q '^GF2X_LIBRARY:FILEPATH=.*NOTFOUND' "$BUILD/CMakeCache.txt"; then
+  HAS_GF2X=0; TARGET=product_bench
+  GF2X_WARNING="WARNING: gf2x was not found (see README.md): gf2x is not timed, and the results of the products are NOT checked."
+  echo "$GF2X_WARNING"
+else
+  HAS_GF2X=1; TARGET=product_test
+fi
+cmake --build "$BUILD" --parallel --target "$TARGET" > "$BUILD/build.log" 2>&1 \
+  || { echo "build failed, see $BUILD/build.log"; exit 1; }
+BIN="$BUILD/$TARGET"
 
 mkdir -p "$OUT"
 {
@@ -101,18 +112,25 @@ mkdir -p "$OUT"
   echo "memory: $(gib "$(awk '/^MemTotal:/ {print $2 * 1024}' /proc/meminfo)") GiB total, $(gib "$avail") GiB available"
   echo "kernel: $(uname -sr)"
   echo "compiler: $(c++ --version | head -1)"
-  echo "sizes: $MIN to $MAX, gf2x up to $GF2X_MAX"
+  if [ "$HAS_GF2X" -eq 1 ]; then echo "sizes: $MIN to $MAX, gf2x up to $GF2X_MAX"; else echo "sizes: $MIN to $MAX, no gf2x (timings only, results not checked)"; fi
 } > "$OUT/info.txt"
 
-# ---- runs. gf2x is timed in the plain run; the fused run only compares with gf2x up to size 25
+# ---- runs. gf2x is timed in the plain run; the optimized run only compares with gf2x up to size 25
 # (to check its results).
 status=0
 SIZES="$MIN-$MAX"
+optimized_gf2x=$((GF2X_MAX < 25 ? GF2X_MAX : 25))
+if [ "$HAS_GF2X" -eq 1 ]; then
+  PLAIN_OPTS=(--gf2x-max "$GF2X_MAX")
+  OPT_OPTS=(--no-degree-test --gf2x-max "$optimized_gf2x")
+else
+  PLAIN_OPTS=()
+  OPT_OPTS=()
+fi
 echo "Plain variant..."
-"$BIN" --sizes "$SIZES" --gf2x-max "$GF2X_MAX" > "$OUT/plain.log" 2>&1 || { echo "plain run FAILED (see $OUT/plain.log)"; status=1; }
-echo "Fused variant..."
-fused_gf2x=$((GF2X_MAX < 25 ? GF2X_MAX : 25))
-"$BIN" --fused --no-degree-test --sizes "$SIZES" --gf2x-max "$fused_gf2x" > "$OUT/fused.log" 2>&1 || { echo "fused run FAILED (see $OUT/fused.log)"; status=1; }
+"$BIN" --sizes "$SIZES" "${PLAIN_OPTS[@]}" > "$OUT/plain.log" 2>&1 || { echo "plain run FAILED (see $OUT/plain.log)"; status=1; }
+echo "Optimized variant..."
+"$BIN" --optimized --sizes "$SIZES" "${OPT_OPTS[@]}" > "$OUT/optimized.log" 2>&1 || { echo "optimized run FAILED (see $OUT/optimized.log)"; status=1; }
 
 # ---- results
 awk '
@@ -124,18 +142,19 @@ awk '
     if (hi == "" || $2 + 0 > hi) hi = $2 + 0
   }
   END {
-    print "log2_size,gf2x,plain,fused,fused_over_plain_speedup,gf2x_over_fused_ratio"
+    print "log2_size,gf2x,plain,optimized,optimized_over_plain_speedup,gf2x_over_optimized_ratio"
     for (s = lo; s <= hi; s++) {
       if (!(s in sizes)) continue
       printf "%s,%s,%s,%s,", s, (g[s] > 0 ? g[s] : ""), p[s], f[s]
       printf "%s,%s\n", (f[s] > 0 ? sprintf("%.2f", p[s] / f[s]) : ""), (g[s] > 0 && f[s] > 0 ? sprintf("%.2f", g[s] / f[s]) : "")
     }
-  }' "$OUT/plain.log" "$OUT/fused.log" > "$OUT/results.csv"
+  }' "$OUT/plain.log" "$OUT/optimized.log" > "$OUT/results.csv"
 
 echo
-echo "Times in seconds (in-place products; ratio = gf2x time / fused time: > 1 if fused is faster):"
+echo "Times in seconds (in-place products; ratio = gf2x time / optimized time: > 1 if optimized is faster):"
 column -s, -t "$OUT/results.csv" 2> /dev/null || cat "$OUT/results.csv"
 echo
-grep -h "Wrong result\|failed" "$OUT/plain.log" "$OUT/fused.log" || true
+grep -h "Wrong result\|failed" "$OUT/plain.log" "$OUT/optimized.log" || true
+[ "$HAS_GF2X" -eq 1 ] || echo "$GF2X_WARNING"
 echo "Results in $OUT"
 exit $status

@@ -9,17 +9,8 @@
 #include "base.h"
 
 
-#ifdef __GNUC__
 // unused, _mm_set_epi64x is preferred
 #define m128_extract(v,idx) (v)[idx]
-#else
-#ifdef _MSC_VER
-// unused, _mm_set_epi64x is preferred
-#define m128_extract(v,idx) (v).m128i_i64[idx]
-#else
-#error "unsupported compiler"
-#endif
-#endif
 
 /**
  * @brief eval_degree1
