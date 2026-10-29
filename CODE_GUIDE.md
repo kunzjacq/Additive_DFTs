@@ -134,12 +134,15 @@ a 'pure' implementation).
   unreduced 128-bit clmul results, then reduce (r_k = p_k + p_{k+R-1} + c p_{k+R}), two rows at once in
   a ymm register when `MG_USE_YMM_CLMUL` is defined.
 - `product_batch` is replaced by `mg_ring_rows` when `cut != 0`.
-- Base case: when the operands have at most 2**`MG_FUSED_BASE_LOGN` (7) 64-bit words, the two public functions
-  call `base_product` instead (no DFT, no allocation): Karatsuba on unreduced `pclmulqdq` products with a
-  schoolbook base case of `MG_FUSED_BASE_KT` (4) words, `kmul` unrolled up to 16 words, `kmul_big` (recursive,
-  `alloca`) above. The result words are written to the output directly (the result of the in-place
-  function is written over `p1` after the operands were copied). Crossover with the DFT-based product, measured on a
-  5950X: base case 1.3x faster at 2**14 bits, equal at 2**15, slower above. `-DMG_FUSED_BASE_LOGN=-1` disables it.
+- Base case: when the operands have at most 2**(`MG_FUSED_BASE_LOGN` (9)) 64-bit words, the two public functions
+  call `base_product` instead (no DFT, no allocation): Karatsuba on carry-less products, on 128-bit digits (2 words)
+  kept in vector registers (`mul_digit`: 3 clmuls, then `mul_digits<M>`, unrolled up to 8 digits, and `mul_digits_big`,
+  recursive with `alloca`, above). Additions and shifts are by whole digits, which is what makes it faster than word
+  by word Karatsuba (about 1.3x). The result words are written to the output directly (the result of the in-place
+  function is written over `p1` after the operands were copied). Crossover with the DFT-based product, measured on
+  a 5950X: the base case is 1.15x faster at 2**16 bits and 1.2x slower at 2**17. `-DMG_FUSED_BASE_LOGN=-1` disables it.
+  Sizes are rounded up to a power of 2 (as in the DFT-based code), unlike gf2x which has code for many sizes; the
+  organization (digits) was inspired by gf2x's small products, but the code is independent.
 - Measured on a Ryzen 9 5950X, a row product is about 2x (R = 4, xmm) to 3.3x (R = 16, ymm, two rows)
   faster than the DFT chain, and slower for R = 256 (3.5x).
 
