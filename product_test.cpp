@@ -3,6 +3,7 @@
 #include <random> // for mt19937_64, uniform_int_distribution<>
 #include <memory> // for unique_ptr
 #include <vector>
+#include <string>
 #include <algorithm> // for copy, fill, equal, max
 
 #include "timer.h"
@@ -25,13 +26,15 @@ constexpr bool do_gf2x = false;
 #endif
 #endif
 // choose between the plain Mateer-Gao product (mg.h) and the variant with fused small stages (mg_fused.h)
-constexpr bool use_fused_variant = false;
+// (default; see command line options in main)
+static bool use_fused_variant = false;
 // choose between in-place or out-of-place product variants of Mateer-Gao product
 constexpr bool test_in_place_variant = true;
 constexpr bool test_naive_product = false; // test or benchmark a naive implementation of polynomial
 // product instead of the DFT-based one. Forces an out-of-place computation.
 
-constexpr unsigned int gf2x_max_logsize = 25;
+// largest size at which the result is compared with gf2x's (default; see command line options in main)
+static unsigned int gf2x_max_logsize = 25;
 constexpr unsigned int naive_max_logsize = 18;
 
 
@@ -256,7 +259,7 @@ static bool mateer_gao_product_test(
     {
       if constexpr(compute_in_place)
       {
-        if constexpr(use_fused_variant) mg_fused::mg_binary_polynomial_multiply_in_place(p1, p2, sz/2 - 1, sz/2 - 1);
+        if(use_fused_variant) mg_fused::mg_binary_polynomial_multiply_in_place(p1, p2, sz/2 - 1, sz/2 - 1);
         else mg_binary_polynomial_multiply_in_place(p1, p2, sz/2 - 1, sz/2 - 1);
       }
       else
@@ -267,7 +270,7 @@ static bool mateer_gao_product_test(
         }
         else
         {
-          if constexpr(use_fused_variant) mg_fused::mg_binary_polynomial_multiply(p1, p2, p3, sz/2 - 1, sz/2 - 1);
+          if(use_fused_variant) mg_fused::mg_binary_polynomial_multiply(p1, p2, p3, sz/2 - 1, sz/2 - 1);
           else mg_binary_polynomial_multiply(p1, p2, p3, sz/2 - 1, sz/2 - 1);
         }
       }
@@ -282,6 +285,8 @@ static bool mateer_gao_product_test(
         run_count);
     cout << " Mateer-Gao runs: " << run_count << endl;
     cout << " Mateer-Gao product time per run: " << t2 << " sec." << endl;
+    // line meant to be parsed by scripts (benchmark.sh): size, gf2x time (0 if not run), Mateer-Gao time
+    cout << "RESULT " << lsz << " " << (do_gf2x_local ? t1 : 0.) << " " << t2 << endl;
     if(compare)
     {
       cout << " MG / gf2x speed ratio: " << t1 / t2 << endl;
@@ -304,12 +309,58 @@ static bool mateer_gao_product_test(
   return error;
 }
 
-int main(int UNUSED(argc), char** UNUSED(argv))
+static void usage(const char* name)
+{
+  cout << "usage: " << name << " [options]" << endl
+       << "  --fused            use the fused variant of the product (mg_fused.h) instead of the plain one" << endl
+       << "  --sizes LIST       output sizes (log2 of the number of bits) to test, e.g. 8-19,25,30,34 (default)" << endl
+       << "  --gf2x-max N       compare with gf2x (and time it) up to size N only (default " << gf2x_max_logsize << ")" << endl
+       << "  --no-degree-test   do not run the tests on small degrees" << endl
+       << "  --help             this help" << endl
+       << "The in-place product of size 2**u bits needs 3.5 * 2**(u-3) bytes of RAM (56 GiB for u = 37)." << endl;
+}
+
+// parse a list of sizes such as "8-19,25,30"
+static bool parse_sizes(const string& s, vector<unsigned int>& sizes)
+{
+  sizes.clear();
+  size_t pos = 0;
+  while(pos <= s.size())
+  {
+    size_t end = s.find(',', pos);
+    if(end == string::npos) end = s.size();
+    const string item = s.substr(pos, end - pos);
+    try
+    {
+      const size_t dash = item.find('-');
+      const unsigned long lo = stoul(item.substr(0, dash));
+      const unsigned long hi = (dash == string::npos) ? lo : stoul(item.substr(dash + 1));
+      if(lo < 7 || hi < lo || hi > 60) return false;
+      for(unsigned long i = lo; i <= hi; i++) sizes.push_back((unsigned int) i);
+    }
+    catch(const exception&) {return false;}
+    pos = end + 1;
+  }
+  return !sizes.empty();
+}
+
+int main(int argc, char** argv)
 {
   // log_sz = 7 (product of 2 64-bit polynomials) is covered by degree_test
-  //unsigned int log_sz[] = {10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37};
-  unsigned int log_sz[] = {8,9,10,11,12,13,14,15,16,17,18,19,25,30,34};
-  //unsigned int log_sz[] = {8};
+  vector<unsigned int> log_sz = {8,9,10,11,12,13,14,15,16,17,18,19,25,30,34};
+  bool run_degree_test = true;
+  for(int i = 1; i < argc; i++)
+  {
+    const string a = argv[i];
+    if(a == "--fused") use_fused_variant = true;
+    else if(a == "--no-degree-test") run_degree_test = false;
+    else if(a == "--gf2x-max" && i + 1 < argc) gf2x_max_logsize = (unsigned int) stoul(argv[++i]);
+    else if(a == "--sizes" && i + 1 < argc)
+    {
+      if(!parse_sizes(argv[++i], log_sz)) {cout << "invalid list of sizes" << endl; return 1;}
+    }
+    else {usage(argv[0]); return a == "--help" ? 0 : 1;}
+  }
   cpu_features f;
   bool cpu_has_required_flags = f.has_popcnt && f.has_bmi1 && f.has_avx2 && f.has_pclmul;
 #if defined(__VPCLMULQDQ__) && defined(__AVX2__)
@@ -321,9 +372,9 @@ int main(int UNUSED(argc), char** UNUSED(argv))
     cout << "cpu flags required not present (AVX2, PCMULQDQ, POPCNT, BMI1, and VPCLMULQDQ if the build targets it). Exiting" << endl;
     exit(2);
   }
-  unsigned int num_sz = sizeof(log_sz) / sizeof(unsigned int);
-  bool mateer_gao_error = degree_test(300);
-  mateer_gao_error |= mateer_gao_product_test(log_sz, num_sz);
+  cout << "Variant: " << (use_fused_variant ? "fused" : "plain") << endl;
+  bool mateer_gao_error = run_degree_test ? degree_test(300) : false;
+  mateer_gao_error |= mateer_gao_product_test(log_sz.data(), (unsigned int) log_sz.size());
   if(mateer_gao_error) cout << "Mateer-Gao product test failed" << endl;
   return mateer_gao_error? EXIT_FAILURE : EXIT_SUCCESS;
 }
