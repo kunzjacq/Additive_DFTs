@@ -72,9 +72,15 @@ static bool degree_test(uint64_t max_degree)
   cout << "Testing products of polynomials of all degrees d1 >= d2, d1 <= " << max_degree << endl;
   mt19937_64 engine(1);
   uint64_t cases = 0, errors = 0;
+  vector<pair<uint64_t, uint64_t>> pairs;
   for(uint64_t d1 = 0; d1 <= max_degree; d1++)
+    for(uint64_t d2 = 0; d2 <= d1; d2 += (d1 < 140) ? 1 : 7) pairs.push_back({d1, d2});
+  // larger degrees, around the sizes at which the base case (small products) stops being used
+  for(uint64_t d1: {511, 512, 1023, 1024, 2047, 2048, 4095, 4096, 8191, 8192, 9000})
+    for(uint64_t d2: {uint64_t(0), uint64_t(1), uint64_t(63), uint64_t(64), uint64_t(255), d1 / 3, d1}) pairs.push_back({d1, d2});
+  for(const auto& dd: pairs)
   {
-    for(uint64_t d2 = 0; d2 <= d1; d2 += (d1 < 140) ? 1 : 7)
+    const uint64_t d1 = dd.first, d2 = dd.second;
     {
       // sizes in 32-bit words, as in the product functions
       unsigned int lg = 0, l2 = 0;

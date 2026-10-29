@@ -2,6 +2,12 @@
 #include <algorithm> // for min, max
 
 #include <immintrin.h>
+#ifdef _MSC_VER
+#include <malloc.h>
+#define alloca _alloca
+#else
+#include <alloca.h>
+#endif
 #include "mg_fused.h"
 
 #include "mg_templates.h"
@@ -566,6 +572,116 @@ static int mg_cut_level(unsigned int logsize_1, unsigned int logsize_2, unsigned
 #endif
 }
 
+// ---------------------------------------------------------------------------------------------
+// Base case: products of small polynomials, directly on 64-bit words.
+//
+// For polynomials of at most 2**MG_FUSED_BASE_LOGN 64-bit words (and of similar sizes), a product
+// by Karatsuba on carry-less 64x64 -> 128 bit products (pclmulqdq) is faster than the DFT-based
+// product (it is 1 pclmulqdq for polynomials of at most 64 bits, 3 for polynomials of at most
+// 128 bits...). The limit was found by experiment: see README.md.
+// MG_FUSED_BASE_LOGN = -1 disables this base case.
+// ---------------------------------------------------------------------------------------------
+#ifndef MG_FUSED_BASE_LOGN
+#define MG_FUSED_BASE_LOGN 7
+#endif
+#ifndef MG_FUSED_BASE_KT
+#define MG_FUSED_BASE_KT 4
+#endif
+static constexpr int base_max_logn = MG_FUSED_BASE_LOGN;
+
+// out[0..2N-2] <- unreduced a * b, as kmul, for any power of two N: Karatsuba, with kmul (unrolled)
+// for N <= 16.
+static void kmul_big(const uint64_t* a, const uint64_t* b, unsigned int n, __m128i* out)
+{
+  switch(n)
+  {
+  case 1:  kmul<1,  MG_FUSED_BASE_KT>(a, b, out); return;
+  case 2:  kmul<2,  MG_FUSED_BASE_KT>(a, b, out); return;
+  case 4:  kmul<4,  MG_FUSED_BASE_KT>(a, b, out); return;
+  case 8:  kmul<8,  MG_FUSED_BASE_KT>(a, b, out); return;
+  case 16: kmul<16, MG_FUSED_BASE_KT>(a, b, out); return;
+  default: break;
+  }
+  const unsigned int h = n / 2;
+  uint64_t* as = (uint64_t*) alloca(2 * h * sizeof(uint64_t));
+  uint64_t* bs = as + h;
+  __m128i* p0 = (__m128i*) alloca(3 * (2 * h - 1) * sizeof(__m128i));
+  __m128i* p2 = p0 + (2 * h - 1);
+  __m128i* pm = p2 + (2 * h - 1);
+  kmul_big(a, b, h, p0);
+  kmul_big(a + h, b + h, h, p2);
+  for(unsigned int i = 0; i < h; i++) {as[i] = a[i] ^ a[i + h]; bs[i] = b[i] ^ b[i + h];}
+  kmul_big(as, bs, h, pm);
+  for(unsigned int i = 0; i < 2 * n - 1; i++) out[i] = _mm_setzero_si128();
+  for(unsigned int i = 0; i < 2 * h - 1; i++)
+  {
+    out[i]         = _mm_xor_si128(out[i], p0[i]);
+    out[i + 2 * h] = _mm_xor_si128(out[i + 2 * h], p2[i]);
+    out[i + h]     = _mm_xor_si128(out[i + h], _mm_xor_si128(pm[i], _mm_xor_si128(p0[i], p2[i])));
+  }
+}
+
+// r[0..nr-1] <- low nr words of a * b, where a and b have na and nb <= N words.
+// Version for N <= 16, with everything on the stack and unrolled.
+template<int N> static void base_product_small(const uint64_t* a, uint64_t na, const uint64_t* b, uint64_t nb, uint64_t* r, uint64_t nr)
+{
+  uint64_t x[N], y[N];
+  for(uint64_t i = 0; i < N; i++) {x[i] = i < na ? a[i] : 0; y[i] = i < nb ? b[i] : 0;}
+  __m128i p[2 * N - 1];
+  kmul<N, MG_FUSED_BASE_KT>(x, y, p);
+  uint64_t t[2 * N + 1];
+  for(int i = 0; i < 2 * N + 1; i++) t[i] = 0;
+  for(int k = 0; k < 2 * N - 1; k++)
+  {
+    t[k]     ^= (uint64_t) _mm_cvtsi128_si64(p[k]);
+    t[k + 1] ^= (uint64_t) _mm_extract_epi64(p[k], 1);
+  }
+  for(uint64_t i = 0; i < nr; i++) r[i] = t[i];
+}
+
+// same for any N (a power of two)
+static void base_product_big(const uint64_t* a, uint64_t na, const uint64_t* b, uint64_t nb, uint64_t* r, uint64_t nr, unsigned int n)
+{
+  uint64_t* x = (uint64_t*) alloca((2 * n + 2 * n + 1) * sizeof(uint64_t));
+  uint64_t* y = x + n;
+  uint64_t* t = y + n;
+  for(uint64_t i = 0; i < n; i++) {x[i] = i < na ? a[i] : 0; y[i] = i < nb ? b[i] : 0;}
+  __m128i* p = (__m128i*) alloca((2 * n - 1) * sizeof(__m128i));
+  kmul_big(x, y, n, p);
+  for(unsigned int i = 0; i < 2 * n + 1; i++) t[i] = 0;
+  for(unsigned int k = 0; k < 2 * n - 1; k++)
+  {
+    t[k]     ^= (uint64_t) _mm_cvtsi128_si64(p[k]);
+    t[k + 1] ^= (uint64_t) _mm_extract_epi64(p[k], 1);
+  }
+  for(uint64_t i = 0; i < nr; i++) r[i] = t[i];
+}
+
+// r[0..nr-1] <- low nr words of a * b, with a and b of na and nb <= 2**logn words
+static void base_product(const uint64_t* a, uint64_t na, const uint64_t* b, uint64_t nb, uint64_t* r, uint64_t nr, unsigned int logn)
+{
+  switch(logn)
+  {
+  case 0: base_product_small<1>(a, na, b, nb, r, nr); break;
+  case 1: base_product_small<2>(a, na, b, nb, r, nr); break;
+  case 2: base_product_small<4>(a, na, b, nb, r, nr); break;
+  case 3: base_product_small<8>(a, na, b, nb, r, nr); break;
+  case 4: base_product_small<16>(a, na, b, nb, r, nr); break;
+  default: base_product_big(a, na, b, nb, r, nr, 1u << logn); break;
+  }
+}
+
+// true if the base case applies to polynomials of degrees d1 and d2, i.e. if their sizes in words,
+// padded to a power of two (2**logn), are small enough.
+static bool base_case_applies(uint64_t d1, uint64_t d2, unsigned int& logn)
+{
+  if(base_max_logn < 0) return false;
+  const uint64_t n = max(d1, d2) / 64 + 1;
+  logn = 0;
+  while((1uLL << logn) < n) logn++;
+  return (int) logn <= base_max_logn;
+}
+
 /**
   @brief mg_core
  * computes the 2**logsize first values of 2**logstride interleaved polynomials given on input,
@@ -885,6 +1001,12 @@ void mg_reverse_core(
 
 void mg_binary_polynomial_multiply(uint64_t* p1, uint64_t* p2, uint64_t* result, uint64_t d1, uint64_t d2)
 {
+  unsigned int logn;
+  if(base_case_applies(d1, d2, logn))
+  {
+    base_product(p1, d1 / 64 + 1, p2, d2 / 64 + 1, result, (d1 + d2) / 64 + 1, logn);
+    return;
+  }
   if(!beta_is_initialized) init_beta_table();
   constexpr unsigned int s = 6;
   uint64_t offsets_mult[1 << s];
@@ -931,6 +1053,12 @@ void mg_binary_polynomial_multiply(uint64_t* p1, uint64_t* p2, uint64_t* result,
 
 void mg_binary_polynomial_multiply_in_place (uint64_t* p1, uint64_t* p2, uint64_t d1, uint64_t d2)
 {
+  unsigned int logn;
+  if(base_case_applies(d1, d2, logn))
+  {
+    base_product(p1, d1 / 64 + 1, p2, d2 / 64 + 1, p1, (d1 + d2) / 64 + 1, logn);
+    return;
+  }
   if(!beta_is_initialized) init_beta_table();
   constexpr unsigned int s = 6;
   uint64_t offsets_mult[1 << s];
