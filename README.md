@@ -134,7 +134,7 @@ Cantor bases are available for field sizes above 2<sup>64</sup> thanks to the op
 
 ## Targets
 There are three targets which can be built for 64-bit Linux or Windows (with MSVC, only `product_test` is built):
-  * `product_test` which benches Mateer-Gao polynomial products (using the finite field GF(2<sup>64</sup>) for DFTs) and checks them against gf2x;
+  * `product_test` which benches Mateer-Gao polynomial products (using the finite field GF(2<sup>64</sup>) for DFTs) and checks them against gf2x; its options (`--fused`, `--sizes`, `--gf2x-max`, `--help`) select the variant and the sizes; the script `benchmark.sh` builds it and runs the full benchmark of the tables below (plain and fused variants, gf2x), best from a text console for the largest sizes;
   * `fft_test` which enables to test and benchmark the DFT algorithms discussed above. The binary field and the size of a buffer used in tests determine which tests can be run; these parameters can be adjusted at compile-time at the top of `fft_test.cpp`. The word type must be `uint32_t` or `uint64_t`. If `USE_BOOST` is enabled and `Boost::multiprecision` (https://www.boost.org/doc/libs/1_73_0/libs/multiprecision/doc/html/index.html) is found, Cantor bases and DFT objects can be instantiated for all sizes for which large integers are available from this library. DFT algorithms are not tested (see above) and currently most likely do not work correctly in these large fields. 
   * `cantor_basis_test` which performs various consistency checks on cantor basis construction.
 

@@ -45,3 +45,6 @@ settings.json
 
 build/*
 gf2x/
+
+build-bench/
+bench-results/
