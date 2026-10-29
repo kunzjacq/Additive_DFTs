@@ -70,9 +70,18 @@ static bool decompose_taylor_test(
 int main(int UNUSED(argc), char** UNUSED(argv))
 {
   cpu_features f;
-  if(!(f.has_sse2 && f.has_pclmul))
+  bool cpu_has_required_flags = f.has_sse2 && f.has_pclmul;
+#if defined(__AVX2__)
+  // the build targets AVX2 (-march=native): the compiler may use it anywhere
+  cpu_has_required_flags = cpu_has_required_flags && f.has_avx2;
+#endif
+#if defined(__VPCLMULQDQ__)
+  // the compiler vectorizes the PCLMULQDQ loops of mateer_gao.h with VPCLMULQDQ
+  cpu_has_required_flags = cpu_has_required_flags && f.has_vpclmul;
+#endif
+  if(!cpu_has_required_flags)
   {
-    cout << "SSE2 and PCMULQDQ are required. Exiting" << endl;
+    cout << "cpu flags required not present (SSE2, PCMULQDQ, and AVX2 and VPCLMULQDQ if the build targets them). Exiting" << endl;
     exit(2);
   }
 

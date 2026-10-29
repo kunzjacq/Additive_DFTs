@@ -166,17 +166,19 @@ a 'pure' implementation).
   truncated Mateer-Gao, Taylor decomposition, and DFT inversion. Top-of-file knobs: `word`
   (`uint32_t` or `uint64_t` only, because the mult-representation functions exist for those),
   `allocated_buf_size` (1 GB), `check_correctness`, `benchmark`, `full_mg_tests`,
-  `full_dft_test_size_limit` and the `log_sz` list `{20, 24}`. It only checks for SSE2 and
-  PCLMULQDQ.
+  `full_dft_test_size_limit` and the `log_sz` list `{20, 24}`. It checks for SSE2 and
+  PCLMULQDQ, plus AVX2 and VPCLMULQDQ when the build targets them.
 - `utils.cpp` and `include/utils.h` provide CPUID feature detection (`cpu_features`) and
   printing and comparison helpers. `include/timer.h` is a small timer. `include/base.h` defines
   `restr` and `UNUSED`.
 
 ### Data files
 
-`2020-10-results_not_in_place.csv`, `2021-05-results_in_place.csv` and `runtimes.ods` hold the
-raw benchmark numbers. The README table matches the in-place CSV (a `0` in the gf2x column means
-out of memory). `times.png` and `speed_ratio.png` are the plots the README embeds.
+`2026-10-results_in_place.csv` holds the benchmark numbers of the README tables (output of
+`benchmark.sh`: gf2x, plain and fused times for each size); `2020-10-results_not_in_place.csv`,
+`2021-05-results_in_place.csv` and `runtimes.ods` are older results (3900X; a `0` in the gf2x column
+means out of memory). `times.png` and `speed_ratio.png` are the plots the README embeds, drawn from
+the 2026-10 CSV (gf2x, plain and fused curves).
 
 ## Things to know
 

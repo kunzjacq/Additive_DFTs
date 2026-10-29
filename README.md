@@ -15,49 +15,12 @@ This project is about experimenting with these DFT algorithms. Reference impleme
 
 Mateer-Gao DFT (and crucially, its truncated implementation) is used to implement fast multiplication of binary polynomials (see https://cr.yp.to/f2mult.html for an outline of the method used). DFTs are used to evaluate the polynomials, then the values obtained for both polynomials are multiplied pointwise, and finally the product is built from the values with an inverse DFT). It is tested and benched against the fastest product implementation known to the author, from library `gf2x`, version 1.3 (https://gitlab.inria.fr/gf2x/gf2x).
 
-The DFT approach is tested by multiplying polynomials of degree 2<sup>u-1</sup> - 1 for values of u s.t. the computations fit into memory. By default `product_test` runs u = 8...19, 25, 30 and 34, and compares results with gf2x only up to u = 25; the list of sizes and these limits are constants at the top of `product_test.cpp`. With the plain variant, it is slower than gf2x for small sizes (u < 18 on an AMD 5950X), and faster beyond that (see the fused variant below). It also uses less memory for large sizes. 
+The DFT approach is tested by multiplying polynomials of degree 2<sup>u-1</sup> - 1 for values of u s.t. the computations fit into memory. By default `product_test` runs u = 8...19, 25, 30 and 34, and compares results with gf2x only up to u = 25; the list of sizes and these limits are constants at the top of `product_test.cpp`. On an AMD 5950X, the fused variant is faster than gf2x from u = 11, with a growing advantage for large sizes (see the results below). The plain variant is a slower reference implementation. Both use less memory than gf2x for large sizes. 
 Both an in-place and a not-in-place product variant are provided. The in-place variant uses less memory and is slightly faster.
-
-### Product computation time results
-
-Experiments on a PC with an AMD Ryzen 9 5950X CPU and 64GB of DDR4 RAM @1800MHz (3600 MT/s), with gf2x 1.3, are summarized below. Results are for the in-place product variant. The code was compiled with gcc using `-march=native` (which enables the 256-bit `vpclmulqdq` code path on this CPU). Each time is an average over repeated runs, which are timed in batches (a batch lasts at least 1 ms, and runs are repeated until 2 s have elapsed), as reading the clock takes about 25 ns, which is not negligible for the smallest sizes. The figures for u = 10...30 were obtained by running `product_test` with `gf2x_max_logsize = 30` and the size list set to u = 8...30; those for u = 31...35 were obtained with a previous version of `product_test` that timed each run (which makes no difference at these sizes). The raw numbers are in `2026-10-results_in_place.csv`. Sizes above 2<sup>35</sup> were not measured (see the memory requirements below: the in-place product of size 2<sup>36</sup> needs 28 GiB, and that of size 2<sup>37</sup> needs 56 GiB, which is close to the 64GB available).
-
-|Output log2 size|gf2x product time (sec.)|Mateer-Gao product time (sec.)|
-|:----:|:----:|:----:|
-|10| 2.046e-08| 3.397e-07|
-|11| 8.967e-08| 7.335e-07|
-|12| 2.663e-07| 1.585e-06|
-|13| 8.018e-07| 3.322e-06|
-|14| 2.447e-06| 7.171e-06|
-|15| 7.89e-06| 1.553e-05|
-|16| 2.296e-05| 3.218e-05|
-|17| 6.528e-05| 6.825e-05|
-|18| 0.0001819| 0.000145|
-|19| 0.0004993| 0.0003072|
-|20| 0.001584| 0.000665|
-|21| 0.003457| 0.001381|
-|22| 0.007146| 0.003006|
-|23| 0.01583| 0.006355|
-|24| 0.03877| 0.01325|
-|25| 0.08161| 0.02786|
-|26| 0.1932| 0.058|
-|27| 0.3703| 0.1239|
-|28| 0.9148| 0.3017|
-|29| 2.449| 0.6817|
-|30| 3.67| 1.484|
-|31| 9.827| 3.221|
-|32| 22.11| 7.256|
-|33| 87.79| 15.9|
-|34| 133.1| 35.14|
-|35| 574.1| 76.79|
-
-![Execution times](https://github.com/kunzjacq/Additive_DFTs/blob/master/times.png?raw=true)
-
-![Speed ratio](https://github.com/kunzjacq/Additive_DFTs/blob/master/speed_ratio.png?raw=true)
 
 ### Fused variant
 
-The plain product above (`libfft/mg.cpp`, `include/mg.h`) is a direct implementation of the Mateer-Gao algorithm. A second implementation, `libfft/mg_fused.cpp` (`include/mg_fused.h`, namespace `mg_fused`), has the same interface and gives the same results, but is 1.05 to 15 times faster (the largest gains are at the smallest sizes); it is a copy of `mg.cpp` that adds optimizations and leaves the original untouched.
+Two implementations of the product are provided. The fused variant (`libfft/mg_fused.cpp`, `include/mg_fused.h`, namespace `mg_fused`) is the fastest; the plain variant (`libfft/mg.cpp`, `include/mg.h`), described [below](#plain-variant), is a direct implementation of the Mateer-Gao algorithm. Both have the same interface and give the same results; the fused variant is 1.1 to 15 times faster than the plain one (the largest gains are at the smallest sizes). It is a copy of `mg.cpp` that adds optimizations and leaves the original untouched. It is faster than gf2x from 2<sup>11</sup> bits on.
 
 **Principle.** The DFT is computed recursively on a square array: the Taylor decomposition and DFTs on columns first, then DFTs on rows. In the product, the forward DFTs of both operands, the pointwise product and the first stages of the inverse DFT are chained, so at the end of the forward DFTs the rows are polynomials of degree < R (R = 4, 16 or 256 words) evaluated on a coset a + GF(R) of the subfield GF(R) of GF(2<sup>64</sup>), which is possible because the beta basis is a Cantor basis. For a row, "DFT of both operands, pointwise product, inverse DFT" is therefore just a product of two polynomials of degree < R modulo the polynomial vanishing on the coset, x<sup>R</sup> + x + c, with c = a<sup>R</sup> + a (c is already known to the DFT code: it is the offset of the next recursion level). The fused variant does not perform these DFT stages on rows of 16 words (4 words for the smallest sizes): it computes the product of the rows directly.
 
@@ -67,44 +30,95 @@ The plain product above (`libfft/mg.cpp`, `include/mg.h`) is a direct implementa
 
 **Taylor decompositions.** The fused variant also uses faster Taylor decompositions (`include/mg_taylor_opt.h`): two levels of the recursion are merged into one step, and the decomposition of rows of 8 and 16 words is done in AVX2 registers. They are worth 3 to 6% of the time of a product at sizes of 2<sup>18</sup> bits and more (where the DFT is used), and give the same results as the original functions. The plain variant still uses the original ones. See [taylor_merge.md](taylor_merge.md).
 
-**Limitations and origin of the base case.** All the timings in this document are for polynomials of degree 2<sup>u-1</sup> - 1, i.e. for sizes that are powers of 2. Unlike gf2x, the implementation (both variants) is not optimized for other sizes: the size of the DFTs, and the size of the operands in the base case, are rounded up to a power of 2, so that the time of a product only increases in steps, at the powers of 2, and the product of two polynomials of a size just above a power of 2 takes about as long as a product of the next power of 2. gf2x on the other hand has code specialized for many sizes (1 to 9 words, then a choice of Toom-Cook variants for each size), and its time increases more smoothly. The organization of the base case (Karatsuba on 128-bit digits kept in vector registers) was inspired by the hand-crafted small products of gf2x, but the code was written independently and is not copied from gf2x.
-
 **Use.** The functions of `mg_fused.h` are drop-in replacements for those of `mg.h`. `product_test` uses them if the constant `use_fused_variant` at the top of `product_test.cpp` is set to `true`. Both variants are tested by `degree_test` in `product_test`.
 
-**Results.** Same machine as above (AMD 5950X, in-place product, same measurement method; these are the same figures as the first two columns of the table above for the sizes in common). Plain and fused variants were measured in separate runs of `product_test` (for sizes up to 2<sup>20</sup>, the fused column was measured again after the base case was added), and the results of both variants are checked against gf2x at each size. For gf2x, the smallest of the measured times is given. For sizes 2<sup>31</sup> to 2<sup>35</sup>, only the fused variant was measured again (one run per size, in-place, with `use_fused_variant = true`); the gf2x and plain Mateer-Gao columns are those of the table above:
+**Limitations and origin of the base case.** All the timings in this document are for polynomials of degree 2<sup>u-1</sup> - 1, i.e. for sizes that are powers of 2. Unlike gf2x, the implementation (both variants) is not optimized for other sizes: the size of the DFTs, and the size of the operands in the base case, are rounded up to a power of 2, so that the time of a product only increases in steps, at the powers of 2, and the product of two polynomials of a size just above a power of 2 takes about as long as a product of the next power of 2. gf2x on the other hand has code specialized for many sizes (1 to 9 words, then a choice of Toom-Cook variants for each size), and its time increases more smoothly. The organization of the base case (Karatsuba on 128-bit digits kept in vector registers) was inspired by the hand-crafted small products of gf2x, but the code was written independently and is not copied from gf2x.
 
-|Output log2 size|gf2x (sec.)|Mateer-Gao (sec.)|fused Mateer-Gao (sec.)|speedup of fused over plain|speed ratio fused / gf2x|
-|:----:|:----:|:----:|:----:|:----:|:----:|
-|8| 6.505e-09| 9.498e-08| 6.508e-09| 14.59| 1.00|
-|9| 9.667e-09| 1.742e-07| 1.303e-08| 13.37| 0.74|
-|10| 2.046e-08| 3.397e-07| 2.396e-08| 14.18| 0.85|
-|11| 8.967e-08| 7.335e-07| 6.535e-08| 11.22| 1.37|
-|12| 2.663e-07| 1.585e-06| 1.981e-07| 8.00| 1.34|
-|13| 8.018e-07| 3.322e-06| 5.865e-07| 5.66| 1.37|
-|14| 2.414e-06| 7.171e-06| 1.761e-06| 4.07| 1.37|
-|15| 7.832e-06| 1.553e-05| 5.354e-06| 2.90| 1.46|
-|16| 2.273e-05| 3.218e-05| 1.612e-05| 2.00| 1.41|
-|17| 6.528e-05| 6.825e-05| 4.786e-05| 1.43| 1.36|
-|18| 0.0001795| 0.000145| 0.0001082| 1.34| 1.66|
-|19| 0.0004964| 0.0003072| 0.0002282| 1.35| 2.18|
-|20| 0.001584| 0.000665| 0.0004886| 1.36| 3.24|
-|21| 0.003457| 0.001381| 0.001052| 1.31| 3.29|
-|22| 0.007146| 0.003006| 0.002275| 1.32| 3.14|
-|23| 0.01583| 0.006355| 0.005081| 1.25| 3.12|
-|24| 0.03877| 0.01325| 0.01066| 1.24| 3.64|
-|25| 0.08161| 0.02786| 0.02273| 1.23| 3.59|
-|26| 0.1932| 0.058| 0.04799| 1.21| 4.03|
-|27| 0.3703| 0.1239| 0.1055| 1.17| 3.51|
-|28| 0.9148| 0.3017| 0.2582| 1.17| 3.54|
-|29| 2.449| 0.6817| 0.583| 1.17| 4.20|
-|30| 3.67| 1.484| 1.278| 1.16| 2.87|
-|31| 9.827| 3.221| 2.913| 1.11| 3.37|
-|32| 22.11| 7.256| 6.598| 1.10| 3.35|
-|33| 87.79| 15.9| 14.78| 1.08| 5.94|
-|34| 133.1| 35.14| 32.68| 1.08| 4.07|
-|35| 574.1| 76.79| 71.07| 1.08| 8.08|
+#### Fused variant: product computation time results
 
-The fused variant is 8 to 15 times faster than the plain one up to 2<sup>10</sup> bits, thanks to the base case, 3 to 11 times faster from 2<sup>11</sup> to 2<sup>15</sup>, 2 times faster at 2<sup>16</sup>, and the advantage then decreases from 1.4x at 2<sup>17</sup> to 2<sup>20</sup> to 1.2x at 2<sup>27</sup> to 2<sup>30</sup> and 1.1x from 2<sup>31</sup> to 2<sup>35</sup>, where the last DFT stages weigh little. The fused variant is as fast as gf2x at 2<sup>8</sup> and 1.2 to 1.35 times slower at 2<sup>9</sup> and 2<sup>10</sup>, where gf2x uses hand-crafted code for each size. It is faster than gf2x from 2<sup>11</sup> on (1.3 to 1.5 times faster up to 2<sup>17</sup>, then 1.7 times at 2<sup>18</sup> and more than 2 times from 2<sup>19</sup>). The plain variant is faster than gf2x from 2<sup>18</sup> on.
+Experiments on a PC with an AMD Ryzen 9 5950X CPU and 64GB of DDR4 RAM @1800MHz (3600 MT/s), with gf2x 1.3, are summarized below. Results are for the in-place product variant. The code was compiled with gcc 13.3 using `-march=native` (which enables the 256-bit `vpclmulqdq` code path on this CPU). All figures, for both variants and for gf2x, come from one run of the script `benchmark.sh` (the raw numbers are in `2026-10-results_in_place.csv`). Each time is an average over repeated runs, which are timed in batches (a batch lasts at least 1 ms, and runs are repeated until 2 s have elapsed; for the largest sizes, this means a single run), as reading the clock takes about 25 ns, which is not negligible for the smallest sizes. The results of the plain variant are checked against gf2x at every size up to 2<sup>35</sup>, and those of the fused variant up to 2<sup>25</sup> (`benchmark.sh` limits the comparison in the fused run to save time; the fused times were not compared with gf2x results above that). gf2x was not run for u = 36 and 37 (not enough memory); the in-place product of size 2<sup>36</sup> needs 28 GiB and that of size 2<sup>37</sup> needs 56 GiB (see the memory requirements below), which is close to the 64GB available.
+
+|Output log2 size|gf2x (sec.)|fused Mateer-Gao (sec.)|speed ratio (gf2x time / fused time)|
+|:----:|:----:|:----:|:----:|
+|8| 6.451e-09| 6.497e-09| 0.99|
+|9| 9.516e-09| 1.288e-08| 0.74|
+|10| 2.016e-08| 2.417e-08| 0.83|
+|11| 9.491e-08| 6.641e-08| 1.43|
+|12| 2.795e-07| 1.999e-07| 1.40|
+|13| 8.113e-07| 5.923e-07| 1.37|
+|14| 2.503e-06| 1.778e-06| 1.41|
+|15| 7.762e-06| 5.392e-06| 1.44|
+|16| 2.282e-05| 1.632e-05| 1.40|
+|17| 6.455e-05| 4.648e-05| 1.39|
+|18| 0.0001793| 0.0001018| 1.76|
+|19| 0.0004933| 0.0002203| 2.24|
+|20| 0.001261| 0.0004674| 2.70|
+|21| 0.003501| 0.001037| 3.38|
+|22| 0.00715| 0.002186| 3.27|
+|23| 0.01605| 0.004945| 3.25|
+|24| 0.03914| 0.01044| 3.75|
+|25| 0.08253| 0.02202| 3.75|
+|26| 0.1965| 0.04765| 4.12|
+|27| 0.3784| 0.1013| 3.74|
+|28| 0.9347| 0.2442| 3.83|
+|29| 2.497| 0.559| 4.47|
+|30| 3.761| 1.234| 3.05|
+|31| 9.937| 2.833| 3.51|
+|32| 22.08| 6.355| 3.47|
+|33| 87.75| 14.19| 6.18|
+|34| 130.8| 31.47| 4.16|
+|35| 572.3| 68.93| 8.30|
+|36| not enough memory| 150.7| -|
+|37| not enough memory| 329.1| -|
+
+![Execution times](times.png)
+
+![Speed ratio](speed_ratio.png)
+
+The graphs also show the plain variant (grey dashed lines), described below. The fused variant is as fast as gf2x at 2<sup>8</sup> bits and 1.2 to 1.35 times slower at 2<sup>9</sup> and 2<sup>10</sup>, where gf2x uses hand-crafted code for each size. It is faster than gf2x from 2<sup>11</sup> on: 1.4 times faster up to 2<sup>17</sup>, then 1.8 times at 2<sup>18</sup>, 2.2 times at 2<sup>19</sup> and 2.7 times at 2<sup>20</sup>; from 2<sup>21</sup> to 2<sup>35</sup> it is 3 to 8 times faster. The gf2x times are irregular for large sizes (the ratio is 3.05 at 2<sup>30</sup> and 6.18 at 2<sup>33</sup>, for instance); the Mateer-Gao times, on the other hand, grow regularly, by a factor of about 2.2 each time the size doubles. The product of size 2<sup>37</sup> takes 329 s.
+
+### Plain variant
+
+The plain product (`libfft/mg.cpp`, `include/mg.h`) is a direct implementation of the Mateer-Gao DFT, without the optimizations of the fused variant. It is kept as a reference, as it is closer to the description of the algorithm (see [CODE_GUIDE.md](CODE_GUIDE.md)). Its memory requirements are the same as those of the fused variant. Its times, measured as described above in the same run, are compared to those of the fused variant below:
+
+|Output log2 size|plain Mateer-Gao (sec.)|fused Mateer-Gao (sec.)|fused is faster than plain by a factor|
+|:----:|:----:|:----:|:----:|
+|8| 9.546e-08| 6.497e-09| 14.69|
+|9| 1.716e-07| 1.288e-08| 13.33|
+|10| 3.524e-07| 2.417e-08| 14.58|
+|11| 7.439e-07| 6.641e-08| 11.20|
+|12| 1.585e-06| 1.999e-07| 7.93|
+|13| 3.357e-06| 5.923e-07| 5.67|
+|14| 7.106e-06| 1.778e-06| 4.00|
+|15| 1.55e-05| 5.392e-06| 2.87|
+|16| 3.245e-05| 1.632e-05| 1.99|
+|17| 6.849e-05| 4.648e-05| 1.47|
+|18| 0.0001462| 0.0001018| 1.44|
+|19| 0.0003095| 0.0002203| 1.40|
+|20| 0.000659| 0.0004674| 1.41|
+|21| 0.001402| 0.001037| 1.35|
+|22| 0.002979| 0.002186| 1.36|
+|23| 0.006423| 0.004945| 1.30|
+|24| 0.01346| 0.01044| 1.29|
+|25| 0.0281| 0.02202| 1.28|
+|26| 0.059| 0.04765| 1.24|
+|27| 0.1249| 0.1013| 1.23|
+|28| 0.2987| 0.2442| 1.22|
+|29| 0.6726| 0.559| 1.20|
+|30| 1.466| 1.234| 1.19|
+|31| 3.145| 2.833| 1.11|
+|32| 7.037| 6.355| 1.11|
+|33| 15.64| 14.19| 1.10|
+|34| 34.7| 31.47| 1.10|
+|35| 75.71| 68.93| 1.10|
+|36| 169.4| 150.7| 1.12|
+|37| 370.8| 329.1| 1.13|
+
+The fused variant is 13 to 15 times faster than the plain one up to 2<sup>10</sup> bits, 2.9 to 11 times faster from 2<sup>11</sup> to 2<sup>15</sup>, 2 times faster at 2<sup>16</sup>, and the difference then decreases: 1.4 to 1.5 times at 2<sup>17</sup> to 2<sup>20</sup>, 1.2 times at 2<sup>27</sup> to 2<sup>30</sup>, and 1.1 times from 2<sup>31</sup> on.
+
+**Where the differences come from.** They follow from the three optimizations of the fused variant described above:
+* *Small sizes (up to 2<sup>16</sup> bits):* the plain variant always runs the full DFT machinery (expansion of the operands into 64-bit words, three DFTs, pointwise product, contraction), whose fixed cost dominates for small products, whereas the fused variant multiplies directly with Karatsuba on carry-less products (base case). This is the source of the factors of 10 and more.
+* *Medium and large sizes:* the fused variant replaces the last stages of the DFTs, on rows of 16 words (4 for the smallest sizes), together with the pointwise product, by a direct product of the rows modulo x<sup>R</sup> + x + c, which is cheaper than the chain of DFT, product and inverse DFT on such a row (by a factor of 2 to 3 on a row). The faster Taylor decompositions add 3 to 6%. The gain is the same fraction of work at each size, but it is a smaller part of the total as the DFT grows, since the number of stages grows with the size while the number of stages replaced is fixed; this is why the advantage decreases from 1.4 to 1.1 as the size grows.
 
 ### Product memory requirements
 
@@ -130,7 +144,7 @@ For u = 37, i.e. a product of two polynomials of degree 2<sup>36</sup>-1, each i
 
 ### Product CPU requirements
 
-The polynomial product code uses a fast implementation of multiplication in GF(2<sup>64</sup>), which is implemented multiple ways in the source, using PCLMULQDQ, POPCNT and SSE intrinsics. `product_test` checks at startup that the CPU reports AVX2, BMI1, POPCNT and PCLMULQDQ (and VPCLMULQDQ when the build targets it, see `MG_USE_YMM_CLMUL` in `include/mg_templates.h`), and exits otherwise; `fft_test` only checks for SSE2 and PCLMULQDQ.
+The polynomial product code uses a fast implementation of multiplication in GF(2<sup>64</sup>), which is implemented multiple ways in the source, using PCLMULQDQ, POPCNT and SSE intrinsics. `product_test` checks at startup that the CPU reports AVX2, BMI1, POPCNT and PCLMULQDQ (and VPCLMULQDQ when the build targets it, see `MG_USE_YMM_CLMUL` in `include/mg_templates.h`), and exits otherwise; `fft_test` checks for SSE2 and PCLMULQDQ, plus AVX2 and VPCLMULQDQ when the build targets them (with `-march=native`, gcc vectorizes the PCLMULQDQ loops of the generic code with 256-bit `vpclmulqdq`).
 
 ## Cantor bases for large field sizes
 
