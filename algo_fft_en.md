@@ -166,13 +166,13 @@ with $\forall \ell < \tau, \deg f_{\ell} < \tau$.
 
 Then, as $R_k = \sigma_{t} + \omega_{\tau j + k}$, $\sigma_t^\ell \equiv \omega_{\tau j + k}^{\ell} \bmod R_k$ and
 
-$$f \bmod R_k = \sum_{\ell<\tau} f_{\ell} \: \omega_{\tau j + k}^{\ell}.$$
+$$f \bmod R_k = \sum_{\ell<\tau} f_{\ell}(X) \: \omega_{\tau j + k}^{\ell}.$$
 
-In other words, the $\{f \bmod R_k, k < \tau\}$ are evaluations of the polynomial $P(Y)= \sum_{\ell<\tau} f_\ell(X) Y^\ell$ on the points $\omega_{\tau j + k}$, $k<\tau$, which are the points of the space $W_t + \omega_{\tau j}$. Let $f_\ell^d$ be the coefficient of $X^d$ in $f_\ell$ ($d<\tau$) and $P_d(Y) = \sum_{\ell<\tau} f_{\ell}^d Y^\ell$, so that $P(Y) = \sum_{d<\tau} P_d(Y) X^d$. Then
+To compute these, remark that the $\omega_{\tau j + k}$, $k<\tau$, are the points of the space $W_t + \omega_{\tau j}$ and that, with $f_\ell^d$ the coefficient of degree $d$ of $f_\ell$ and $P_d(Y) = \sum_{\ell<\tau} f_{\ell}^d Y^\ell$, $d,\ell <\tau$:
 
-$$f \bmod R_k = \sum_{d<\tau} P_d(\omega_{\tau j + k}) \, X^d.$$
+$$\text{coefficient of degree }d \text{ of } (f \bmod R_k) = \sum_{\ell<\tau} f_{\ell}^d \omega_{\tau j + k}^{\ell} = P_d(\omega_{\tau j + k}).$$
 
-Therefore computing $P(Y)$ on $W_t + \omega_{\tau j}$ is equivalent to evaluating the $\tau$ polynomials $P_d$, which have scalar coefficients, on the same space; this can be done by $\tau$ DFTs of size $\tau$. If the results of the DFT of $P_d$ are written in column $d$ of a matrix, the $f \bmod R_k$ are then obtained by reading the rows: row $k$ contains $f \bmod R_k$.
+Hence the $P_d$ can be evaluated on $W_t + \omega_{\tau j}$ by $\tau$ DFTs of size $\tau$. If, for $d<\tau$, the results of the DFT of $P_d$ are written in column $d$ of a $\tau \times \tau$ matrix, the $f \bmod R_k$ are then obtained by reading the rows: row $k$ contains $f \bmod R_k$.
 
 The recursion step ends with a DFT of each of the $f \bmod R_k$, which produces the desired values of $f$ (or $f_0$).
 
