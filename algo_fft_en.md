@@ -288,6 +288,8 @@ The loop adds $f_{hi} X^\delta$ to the array, the coefficient at position $m + j
 
 **Variants.** The implementation used by the fast product (`mg_decompose_taylor_recursive` in `include/mg_templates.h`) assumes that $n$ is a power of 2 (the polynomial is padded with zeros if needed). The generic version (`decompose_taylor_recursive` in `include/decompose_taylor.h`) accepts any number of coefficients: $n$ is then the smallest power of 2 not below it, the loop only runs over the existing coefficients, and the recursion is on the $m$ low coefficients and on the remaining high ones. Iterative versions (`decompose_taylor_iterative*`) perform the same additions level by level instead of recursively.
 
+An experiment on merging two levels of the recursion into a single step, to reduce the number of passes on the array, and the possible improvements, are described in [taylor_merge.md](taylor_merge.md).
+
 ### Remark: products of polynomials, and the last stages of the DFT
 
 In the DFT-based product of two polynomials $f$ and $h$ (see next section), the DFTs of $f$ and $h$ are computed with the same parameters, multiplied pointwise, and an inverse DFT is performed. Consider the last stage (step 3) of the algorithm above. After step 2, row $i$ of the matrix is $f \bmod R_i$ (resp. $h \bmod R_i$), a polynomial of degree $<\tau$. The three operations that follow on this row (DFT of both operands, pointwise product, inverse DFT) amount to computing the product
