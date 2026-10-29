@@ -168,7 +168,11 @@ Then, as $R_k = \sigma_{t} + \omega_{\tau j + k}$, $\sigma_t^\ell \equiv \omega_
 
 $$f \bmod R_k = \sum_{\ell<\tau} f_{\ell} \: \omega_{\tau j + k}^{\ell}.$$
 
-In other words, the $\{f \bmod R_k, k < \tau\}$ are evaluations of the polynomial $P(Y)= \sum_{\ell<\tau} f_\ell(X) Y^\ell$ on the points $\omega_{\tau j + k}$, $k<\tau$, of the space $W_t + \omega_{\tau j}$. These evaluations can therefore be performed by a DFT. The fact that the coefficients of $P$ and the values to compute are themselves polynomials (in $X$, of degree $<\tau$) is not a problem: $\tau$ DFTs are performed, one for each degree in $X$, and the final values are obtained by reassembling the DFT results.
+In other words, the $\{f \bmod R_k, k < \tau\}$ are evaluations of the polynomial $P(Y)= \sum_{\ell<\tau} f_\ell(X) Y^\ell$ on the points $\omega_{\tau j + k}$, $k<\tau$, which are the points of the space $W_t + \omega_{\tau j}$. Let $f_\ell^d$ be the coefficient of $X^d$ in $f_\ell$ ($d<\tau$) and $P_d(Y) = \sum_{\ell<\tau} f_{\ell}^d Y^\ell$, so that $P(Y) = \sum_{d<\tau} P_d(Y) X^d$. Then
+
+$$f \bmod R_k = \sum_{d<\tau} P_d(\omega_{\tau j + k}) \, X^d.$$
+
+Therefore computing $P(Y)$ on $W_t + \omega_{\tau j}$ is equivalent to evaluating the $\tau$ polynomials $P_d$, which have scalar coefficients, on the same space; this can be done by $\tau$ DFTs of size $\tau$. If the results of the DFT of $P_d$ are written in column $d$ of a matrix, the $f \bmod R_k$ are then obtained by reading the rows: row $k$ contains $f \bmod R_k$.
 
 The recursion step ends with a DFT of each of the $f \bmod R_k$, which produces the desired values of $f$ (or $f_0$).
 
@@ -292,39 +296,57 @@ An experiment on merging two levels of the recursion into a single step, to redu
 
 ### Remark: products of polynomials, and the last stages of the DFT
 
-In the DFT-based product of two polynomials $f$ and $h$ (see next section), the DFTs of $f$ and $h$ are computed with the same parameters, multiplied pointwise, and an inverse DFT is performed. Consider the last stage (step 3) of the algorithm above. After step 2, row $i$ of the matrix is $f \bmod R_i$ (resp. $h \bmod R_i$), a polynomial of degree $<\tau$. The three operations that follow on this row (DFT of both operands, pointwise product, inverse DFT) amount to computing the product
+In the DFT-based product of two polynomials $f$ and $h$ (see [the section on the use of a DFT to perform binary polynomial product](#use-of-a-dft-to-perform-binary-polynomial-product)), the DFTs of $f$ and $h$ are computed with the same parameters, multiplied pointwise, and an inverse DFT is performed. Consider the last stage (step 3) of the algorithm above. After step 2, row $i$ of the matrix is $f \bmod R_i$ (resp. $h \bmod R_i$), a polynomial of degree $<\tau$. The three operations that follow on this row (DFT of both operands, pointwise product, inverse DFT) amount to computing the product
 $$(f \bmod R_i) \, (h \bmod R_i) \bmod R_i, \qquad R_i = X^\tau + X + \omega_{\tau j + i},$$
-which is a product in the ring $\mathbb{F}[X]/(R_i)$, and which can also be computed directly: a product of polynomials of degree $<\tau$, followed by a reduction using $X^\tau = X + \omega_{\tau j + i}$ (which is cheap). For small $\tau$ this direct computation is faster than the three DFTs. The "fused variant" of the polynomial product described in the README does exactly this.
+which is a product in the ring $\mathbb{F}[X]/(R_i)$, and which can also be computed directly: a product of polynomials of degree $<\tau$, followed by a reduction using $X^\tau = X + \omega_{\tau j + i}$ (which is cheap). For small $\tau$ this direct computation is faster than the three DFTs. The product of polynomials of degree $<\tau$ is itself computed from carry-less products of words, as described in [the section on converting between binary and field polynomial products](#converting-between-binary-and-field-polynomial-products). The "optimized variant" of the polynomial product described in the README does exactly this.
+
+### Converting between binary and field polynomial products
+
+Let $\mathbb{F}$ be the binary field of size $2^n$, $\alpha$ a primitive element of $\mathbb{F}$, and $\mu$ the minimal polynomial of $\alpha$ over $\mathbb{F}_2$ (of degree $n$). Elements of $\mathbb{F}$ are represented in the basis $A = \{1, \alpha, \ldots, \alpha^{n-1}\}$, i.e. by binary polynomials of degree $<n$. Let
+$$\psi: \mathbb{F}_2[X] \to \mathbb{F}, \qquad \sum_i u_i X^i \mapsto \sum_i u_i \alpha^i .$$
+$\psi$ is a ring morphism, of kernel $(\mu)$; restricted to polynomials of degree $<n$ it is a bijection, and $\psi^{-1}$ denotes the inverse of this restriction. Therefore the product of two elements of $\mathbb{F}$ is a product of binary polynomials followed by a reduction modulo $\mu$. For two binary polynomials $a$ and $b$, $\psi(ab) = \psi(a)\psi(b)$ always holds, and if $\deg a + \deg b < n$ no reduction is needed: $ab$ has degree $<n$, hence $ab = \psi^{-1}(\psi(a)\psi(b))$.
+
+This gives two ways to convert a product from one ring to the other. Both are used in this project: the first one for the whole product of binary polynomials (the DFT computes a product in $\mathbb{F}[X]$), the second one, in the form of carry-less multiplications of words, to compute small products in $\mathbb{F}[X]$ (multiplication in $\mathbb{F}$ itself, and the direct products of rows of the optimized variant).
+
+#### Binary polynomial product from a product in $\mathbb{F}[X]$
+
+Let $p$ and $q$ be binary polynomials of arbitrary degree. They are written in blocks of $n/2$ bits ($n$ is even)
+$$p=\sum_j c_{p,j} \, X^{j \cdot n/2}\ \text{ with }\ \forall j\,,\ c_{p,j} = \sum_{j \cdot n/2 \leq i < (j+1)n/2} p_i X^{i-j \cdot n/2}$$
+(and similarly for $q$). Each product $c_{p,k} c_{q,\ell}$ has degree $\leq n-2 < n$, so that $c_{p,k} c_{q,\ell} = \psi^{-1}\left(\psi(c_{p,k}) \psi(c_{q,\ell})\right)$ and
+$$p\, q = \sum_j \sum_{k+\ell=j} c_{p,k} c_{q,\ell} \, X^{j \cdot n/2} = \sum_j \psi^{-1}\left(\sum_{k+\ell=j} \psi(c_{p,k}) \psi(c_{q,\ell}) \right) \, X^{j \cdot n/2}.$$
+
+Write $u_j = \sum_{k+\ell=j} \psi(c_{p,k}) \psi(c_{q,\ell})$. Then $p\, q = \sum_j \psi^{-1}(u_j) X^{j \cdot n/2}$. Compare with the product in $\mathbb{F}[X]$ of $\tilde{p} = \sum_k \psi(c_{p,k}) X^k$ and $\tilde{q} = \sum_{\ell} \psi(c_{q,\ell}) X^{\ell}$:
+$$\tilde{p}\, \tilde{q} = \sum_{j} \left(\sum_{k+\ell=j} \psi(c_{p,k}) \psi(c_{q,\ell}) \right) X^j = \sum_j u_j X^j.$$
+The coefficients of $\tilde{p}\, \tilde{q}$ are exactly the $u_j$. Hence the method:
+
+1) **Prologue.** Split $p$ and $q$ into blocks of $n/2$ bits, and map these blocks to coefficients in $\mathbb{F}$ ($\psi(c_{p,j})$ and $\psi(c_{q,j})$), forming two polynomials $\tilde{p}$ and $\tilde{q}$ over $\mathbb{F}$. With the basis $A$, this mapping is only a change of the way the bits are stored: each block is zero-extended to $n$ bits (in the implementation, $n = 64$: each 32-bit chunk is stored in a 64-bit word, function `expand`).
+2) Compute $\tilde{r} = \tilde{p} \times \tilde{q} = \sum_j u_j X^j$ in $\mathbb{F}[X]$, by any means. The polynomial $\tilde{r}$ has $\#\text{blocks}(p) + \#\text{blocks}(q) - 1$ coefficients.
+3) **Epilogue.** The binary polynomial $\psi^{-1}(u_j)$ has degree up to $n-2$, and is placed at degree $j \cdot n/2$ in $r = p\,q$: the block $j$ covers the degrees $j \cdot n/2 \ldots j \cdot n/2 + n - 2$, and the next block starts at degree $(j+1) \cdot n/2$. Consecutive blocks therefore overlap, and each degree is covered by at most two blocks. The result $r$ is obtained by writing the coefficients $\psi^{-1}(u_j)$ (again a change of representation) at these positions and adding the overlapping parts together (function `contract`: the output block $j$, of $n/2$ bits, is the sum of the upper half of the word of index $j-1$ and the lower half of the word of index $j$).
+
+#### Product in $\mathbb{F}[X]$ from binary polynomial products
+
+Conversely, binary polynomial products can be used to multiply polynomials $P = \sum_i P_i X^i$ and $Q = \sum_i Q_i X^i$ of $\mathbb{F}[X]$. Write $\hat{P}_i = \psi^{-1}(P_i)$ and $\hat{Q}_i = \psi^{-1}(Q_i)$, binary polynomials of degree $<n$ (the bit representations of $P_i$ and $Q_i$ in the basis $A$). The coefficient of $X^k$ in $PQ$ is
+$$R_k = \sum_{i+j=k} P_i Q_j = \sum_{i+j=k} \psi(\hat{P}_i)\psi(\hat{Q}_j) = \psi(s_k), \qquad s_k = \sum_{i+j=k} \hat{P}_i \hat{Q}_j,$$
+where $s_k$ is a sum of products in $\mathbb{F}_2[X]$ (no reduction), because $\psi$ is a ring morphism. Each $\hat{P}_i \hat{Q}_j$ has degree $\leq 2n-2$, and so does $s_k$. Computing $\psi(s_k)$ is the reduction of $s_k$ modulo $\mu$ (the bits of degree $\geq n$ are expressed in the basis $A$, using $\alpha^t$ for $t \geq n$), which is linear. Hence a product in $\mathbb{F}[X]$ can be computed by any algorithm that only uses additions and products of coefficients (schoolbook, Karatsuba...), in which each product of coefficients is a **binary polynomial product left unreduced**, and additions are additions of binary polynomials (XORs). The reduction modulo $\mu$ is done **once per coefficient of the result**, instead of once per product of coefficients.
+
+In practice, when $n$ is the word size of the processor, a product $\hat{P}_i \hat{Q}_j$ is one carry-less multiplication instruction (`pclmulqdq`: $64 \times 64 \to 127$ bits for $n=64$), and the unreduced values are stored on $2n$ bits.
+
+**Remark: Kronecker substitution.** The same computation can be done with a standard binary polynomial product, with the coefficients expanded before the product and reduced after it. Write the coefficients $P_i$ in blocks of $2n-1$ bits (the upper $n-1$ bits of each block being zero) to form the binary polynomials $\hat{P} = \sum_i \hat{P}_i \, X^{(2n-1)\, i}$ and $\hat{Q} = \sum_i \hat{Q}_i \, X^{(2n-1)\, i}$. Their binary product is $S = \sum_k s_k \, X^{(2n-1)\, k}$; as $s_k$ has degree $\leq 2n-2$ the blocks of $2n-1$ bits do not overlap, so the $s_k$ are read directly from $S$ and $R_k = \psi(s_k)$. The quantities computed are the same as above; the difference is that the inputs are padded to $2n-1$ bits per coefficient, half of each operand being zeros. A binary product algorithm that does not take advantage of these zeros (such as the one of `gf2x`) works on operands twice as long, which costs about 3 times more with Karatsuba and 4 times more with the schoolbook algorithm, compared to an algorithm on $\mathbb{F}[X]$ that multiplies $n$-bit coefficients and only expands the products. This is why the project uses the word-level version, which also allows combining the reduction modulo $\mu$ with the one modulo $X^R + X + c$.
+
+##### Use for direct row products
+
+This is used to perform the direct products of rows of the optimized variant (functions `kmul` and `ring_mul` in `libfft/mg_fused.cpp`, see [the remark on the last stages of the DFT](#remark-products-of-polynomials-and-the-last-stages-of-the-dft)) which are products of polynomials of $\mathbb{F}[X]$ of degree $<R$. They are computed with Karatsuba on carry-less products of $n$-bit words, kept unreduced; the additions of the Karatsuba algorithm are XORs of unreduced values, and a reduction modulo $\mu$ is done after summation on each coefficient. 
+
+The reduction modulo $X^R + X + c$ that follows involves the products of the high coefficients by $c \in \mathbb{F}$; as these are multiplications of $\mathbb{F}$ they require the high coefficients to be reduced first (one reduction each), after which they are added to the other unreduced coefficients before the final reduction.
 
 ### Use of a DFT to perform binary polynomial product
 
-In the binary field of size $2^n$, a common basis is generated by a primitive element $\alpha$. If $\mu$ is the minimal polynomial of $\alpha$ over $\mathbb{F}_2$, the product of two elements of $\mathbb{F}$ in basis $\alpha$ is the product of polynomials over $\mathbb{F}_2$ followed by a modular reduction by $\mu$. As a consequence, given two elements represented by polynomials of degree $< n/2$, their product has degree $< n$ and coincides with the regular polynomial product. This observation can be leveraged as follows to multiply binary polynomials $p$ and $q$ of arbitrary degree:
+To multiply binary polynomials $p$ and $q$ of arbitrary degree, the product in $\mathbb{F}[X]$ of step 2 of [the previous section](#converting-between-binary-and-field-polynomial-products) is computed with DFTs, in the field $\mathbb{F}$ of size $2^n$ (in the implementation, $n = 64$). The prologue (splitting $p$ and $q$ in blocks of $n/2$ bits and mapping them to $\tilde{p}$ and $\tilde{q}$, function `expand`) and the epilogue (adding the overlapping blocks of the coefficients of $\tilde{r}$ to build $r$, function `contract`) are those described in that section. In between:
 
-1) Split $p$ and $q$ into blocks of $n/2$ bits, and map these blocks to coefficients in $\mathbb{F}$, forming two polynomials $\tilde{p}$ and $\tilde{q}$ over $\mathbb{F}$.
-2) Compute $\tilde{r} = \tilde{p} \times \tilde{q}$ in $\mathbb{F}[X]$.
-3) Coefficient $i$ of $\tilde{r}$ corresponds to coefficients of degree $i \cdot n/2 \ldots i \cdot n/2 + n - 1$ of $r = p \times q$ (these coefficients overlap and the overlapping parts must be added together).
+1) Compute the DFTs of $\tilde{p}$ and $\tilde{q}$ on the same set of points.
+2) Multiply the two lists of values pointwise (products in $\mathbb{F}$).
+3) Compute the inverse DFT of the list of products: the result is $\tilde{r}$.
 
-The product computation at step 2 can be performed by two DFTs, the pointwise product of the results, then an inverse DFT. The DFTs must have enough values to determine $\tilde{r}$: their size must be at least $\deg \tilde{r} + 1$.
+The DFTs must have enough values to determine $\tilde{r}$: their size must be at least $\deg \tilde{r} + 1$, that is the number of blocks of $p$ plus the number of blocks of $q$ minus one. As the inputs $\tilde{p}$ and $\tilde{q}$ have fewer coefficients than the DFTs have values, the DFTs of the polynomials are computed with the variants of the algorithms for an input shorter than the output, and the inverse DFT with the truncated reverse variant (see the README and the functions `mg_smalldegree`, `mg_smalldegree_with_buf` and `mg_reverse_core` of `libfft/mg.cpp`).
 
-Let us detail the correspondence between polynomial products in $\mathbb{F}_2[X]$ and in $\mathbb{F}[X]$. Let $\psi: \mathbb{F}_2[X] \to \mathbb{F}$ which associates $\sum_i u_i \alpha^i$ to $\sum_i u_i X^i$. $\psi$ is bijective when restricted to polynomials of degree $ < n$, $\psi^{-1}$ is the inverse of this restricted map.
-
-A polynomial $p=\sum_i p_i X^i$ is written in "blocks"
-$$p=\sum_j c_{p,j} \, X^{j \cdot n/2}\ \text{ with }\ \forall j\,,\ c_{p,j} = \sum_{j \cdot n/2 \leq i < (j+1)n/2} p_i X^{i-j \cdot n/2}$$
-
-Then
-$$p\, q = \sum_j \sum_{k+\ell=j} c_{p,k} c_{q,\ell} \, X^{j \cdot n/2} = \sum_j \psi^{-1}\left(\sum_{k+\ell=j} \psi(c_{p,k}) \psi(c_{q,\ell}) \right) \, X^{j \cdot n/2}$$
-
-(because each product $c_{p,k} c_{q,\ell}$ has degree $<n$, so that $\psi(c_{p,k} c_{q,\ell}) = \psi(c_{p,k}) \psi(c_{q,\ell})$).
-
-Write $u_j = \sum_{k+\ell=j} \psi(c_{p,k}) \psi(c_{q,\ell})$. Then $p\, q = \sum_j \psi^{-1}(u_j) X^{j \cdot n/2}$.
-
-Note that the polynomials $\psi^{-1}(u_j)$ are in general of degree up to $n-2$, hence they overlap in the sum above: the block $j$ covers the degrees $j \cdot n/2 \ldots j \cdot n/2 + n - 2$, and the next block starts at degree $(j+1) \cdot n/2$.
-
-Compare the product above to the product in $\mathbb{F}[X]$ of $\tilde{p} = \sum_k \psi(c_{p,k}) X^k$ and $\tilde{q} = \sum_{\ell} \psi(c_{q,\ell}) X^{\ell}$:
-$$\tilde{p}\, \tilde{q} = \sum_{j} \left(\sum_{k+\ell=j} \psi(c_{p,k}) \psi(c_{q,\ell}) \right) X^j = \sum_j u_j X^j.$$
-
-Therefore this product produces exactly the coefficients needed to compute $p\, q$.
-
-We can derive from this the following method to compute $p \, q$: form the polynomials $\tilde{p}$ and $\tilde{q}$ by forming the coefficients $c_{p,j}$ and $c_{q,j}$ and, considering them as elements of $\mathbb{F}$ (formally, by computing $\psi(c_{p,j})$ and $\psi(c_{q,j})$), compute the product $\tilde{p}\, \tilde{q}$. Then use the coefficients $u_j$ of the result, with the proper overlapping, to compute $p\, q$.
-
-As a final remark, note that this algorithm requires to work with the basis $A = \{ 1, \alpha, \alpha^2,\ldots, \alpha^{n-1} \} $, which is distinct from the Cantor basis used for efficient DFT computation (the evaluation points $\omega_j$ of the DFT, which are defined in the Cantor basis, must be expressed in the basis $A$: this is the role of the function `omega` above). Another incentive to use the basis $A$ is that, with a careful selection of the minimal polynomial of $\alpha$, it enables an efficient implementation of multiplication in $\mathbb{F}$.
+As a final remark, note that this algorithm requires working with the basis $A = \{ 1, \alpha, \alpha^2,\ldots, \alpha^{n-1} \} $, which is distinct from the Cantor basis used for efficient DFT computation (the evaluation points $\omega_j$ of the DFT, which are defined in the Cantor basis, must be expressed in the basis $A$: this is the role of the function `omega` above). Another incentive to use the basis $A$ is that, with a careful selection of the minimal polynomial of $\alpha$, it enables an efficient implementation of multiplication in $\mathbb{F}$.
