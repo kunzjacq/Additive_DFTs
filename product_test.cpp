@@ -10,6 +10,8 @@
 #include "timer.h"
 #include "mg.h"
 #include "mg_fused.h"
+#include "mg_templates.h"
+#include "mg_taylor_opt.h"
 #include "utils.h"
 
 #include "gf2x.h"
@@ -87,6 +89,61 @@ template<class F, class G> static double time_calls(F f, G after_first, uint64_t
     if(t_batch < batch_min_time) batch *= 2;
   }
   return calls == 0 ? t_first : total / (double) calls;
+}
+
+// compares the optimized Taylor decompositions (mg_taylor_opt.h) with the original ones
+// (mg_templates.h) on random arrays, for the sizes allowed (t < logsize <= 2t) and for several strides
+template<unsigned int logstride, unsigned int t>
+static uint64_t taylor_test_one(mt19937_64& engine, uint64_t& errors)
+{
+  uint64_t cases = 0;
+  for(unsigned int logsize = t + 1; logsize <= 2 * t; logsize++)
+  {
+    const uint64_t n = 1uLL << (logstride + logsize);
+    vector<uint64_t> a(n), r1, r2;
+    for(auto& x: a) x = engine();
+    r1 = a; r2 = a;
+    mg_decompose_taylor_recursive<logstride, t, uint64_t>(logsize, r1.data());
+    mg_decompose_taylor_opt<logstride, t, uint64_t>(logsize, r2.data());
+    bool ok = (r1 == r2);
+    r1 = a; r2 = a;
+    mg_decompose_taylor_reverse_recursive<logstride, t>(logsize, r1.data());
+    mg_decompose_taylor_reverse_opt<logstride, t, uint64_t>(logsize, r2.data());
+    ok = ok && (r1 == r2);
+    // 32-bit words
+    vector<uint32_t> a32(n), s1, s2;
+    for(auto& x: a32) x = (uint32_t) engine();
+    s1 = a32; s2 = a32;
+    mg_decompose_taylor_recursive<logstride, t, uint32_t>(logsize, s1.data());
+    mg_decompose_taylor_opt<logstride, t, uint32_t>(logsize, s2.data());
+    ok = ok && (s1 == s2);
+    cases++;
+    if(!ok)
+    {
+      errors++;
+      cout << " ** Wrong Taylor decomposition ** logstride = " << logstride << ", t = " << t << ", logsize = " << logsize << endl;
+    }
+  }
+  return cases;
+}
+
+static bool taylor_test()
+{
+  cout << "Testing the optimized Taylor decompositions" << endl;
+  mt19937_64 engine(2);
+  uint64_t cases = 0, errors = 0;
+  for(int rep = 0; rep < 20; rep++)
+  {
+    cases += taylor_test_one<0, 1>(engine, errors) + taylor_test_one<0, 2>(engine, errors)
+        + taylor_test_one<0, 3>(engine, errors) + taylor_test_one<0, 4>(engine, errors)
+        + taylor_test_one<0, 5>(engine, errors);
+    cases += taylor_test_one<1, 1>(engine, errors) + taylor_test_one<2, 2>(engine, errors)
+        + taylor_test_one<4, 2>(engine, errors) + taylor_test_one<3, 3>(engine, errors)
+        + taylor_test_one<8, 4>(engine, errors) + taylor_test_one<5, 4>(engine, errors)
+        + taylor_test_one<7, 5>(engine, errors);
+  }
+  cout << " " << cases << " cases, " << errors << " errors" << endl;
+  return errors != 0;
 }
 
 // naive product of binary polynomials, for the degree tests below
@@ -390,7 +447,7 @@ int main(int argc, char** argv)
     exit(2);
   }
   cout << "Variant: " << (use_fused_variant ? "fused" : "plain") << endl;
-  bool mateer_gao_error = run_degree_test ? degree_test(300) : false;
+  bool mateer_gao_error = run_degree_test ? (taylor_test() | degree_test(300)) : false;
   mateer_gao_error |= mateer_gao_product_test(log_sz.data(), (unsigned int) log_sz.size());
   if(mateer_gao_error) cout << "Mateer-Gao product test failed" << endl;
   return mateer_gao_error? EXIT_FAILURE : EXIT_SUCCESS;

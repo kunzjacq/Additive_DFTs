@@ -11,6 +11,7 @@
 #include "mg_fused.h"
 
 #include "mg_templates.h"
+#include "mg_taylor_opt.h"
 
 using namespace std;
 
@@ -795,7 +796,7 @@ inline void mg_core(
       // on input: there are 2**'logstride' interleaved series of size 'eta' = 2**(2*logsize-t);
       if(!first_taylor_done)
       {
-        mg_decompose_taylor_recursive<logstride, t, uint64_t>(logsize, poly);
+        mg_decompose_taylor_opt<logstride, t, uint64_t>(logsize, poly);
       }
       // fft on columns
       // if logsize >= t, each fft should process 2**(logsize - t) values
@@ -869,7 +870,7 @@ void mg_smalldegree(
       return;
     }
     constexpr unsigned int t = 1u << (s - 1);
-    mg_decompose_taylor_recursive<0u, t, uint64_t>(logsizeprime, p);
+    mg_decompose_taylor_opt<0u, t, uint64_t>(logsizeprime, p);
     for(uint64_t i = 1; i < 1uLL << (logsize - logsizeprime); i++)
     {
       uint64_t* q = p + (i << logsizeprime);
@@ -946,7 +947,7 @@ void mg_smalldegree_with_buf(
     // the natural order of operations is to expand p (expand every 32-bit word into q 64-bit word),
     // then apply mg_decompose_taylor_recursive on 64-bit words
     // this is equivalent to doing mg_decompose_taylor_recursive on 32-bit words, then expanding
-    mg_decompose_taylor_recursive<0u, t, uint32_t>(logsizeprime, (uint32_t*)p);
+    mg_decompose_taylor_opt<0u, t, uint32_t>(logsizeprime, (uint32_t*)p);
 
     uint64_t offsets_mult[1 << s];
     for(int i = 0; i < (1 << s); i++) offsets_mult[i] = 0;
@@ -1040,7 +1041,7 @@ void mg_reverse_core(
       // reverse fft on columns
       //offset' = offset >> t;
       mg_reverse_core<s - 1, logstride + t>(poly, offsets_mult + t, logsize - t, cut);
-      mg_decompose_taylor_reverse_recursive<logstride, t>(logsize, poly);
+      mg_decompose_taylor_reverse_opt<logstride, t, uint64_t>(logsize, poly);
     }
   }
 }
