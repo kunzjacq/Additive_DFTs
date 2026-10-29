@@ -20,31 +20,31 @@ Both an in-place and a not-in-place product variant are provided. The in-place v
 
 ### Product computation time results
 
-Experiments on a PC with an AMD Ryzen 9 5950X CPU and 64GB of DDR4 RAM @1800MHz (3600 MT/s), with gf2x 1.3, are summarized below. Results are for the in-place product variant. The code was compiled with gcc using `-march=native` (which enables the 256-bit `vpclmulqdq` code path on this CPU). Each time is an average over repeated runs (repeated until 2 s have elapsed, at most 100 runs per size). These figures were obtained by running `product_test` with `gf2x_max_logsize = 35` and the size list set to u = 10...35. The raw numbers are in `2026-10-results_in_place.csv`. The 64GB of RAM do not allow the in-place product of size 2<sup>36</sup> to be computed.
+Experiments on a PC with an AMD Ryzen 9 5950X CPU and 64GB of DDR4 RAM @1800MHz (3600 MT/s), with gf2x 1.3, are summarized below. Results are for the in-place product variant. The code was compiled with gcc using `-march=native` (which enables the 256-bit `vpclmulqdq` code path on this CPU). Each time is an average over repeated runs, which are timed in batches (a batch lasts at least 1 ms, and runs are repeated until 2 s have elapsed), as reading the clock takes about 25 ns, which is not negligible for the smallest sizes. The figures for u = 10...30 were obtained by running `product_test` with `gf2x_max_logsize = 30` and the size list set to u = 8...30; those for u = 31...35 were obtained with a previous version of `product_test` that timed each run (which makes no difference at these sizes). The raw numbers are in `2026-10-results_in_place.csv`. The 64GB of RAM do not allow the in-place product of size 2<sup>36</sup> to be computed.
 
 |Output log2 size|gf2x product time (sec.)|Mateer-Gao product time (sec.)|
 |:----:|:----:|:----:|
-|10| 6.8e-08| 4.817e-07|
-|11| 1.378e-07| 9.135e-07|
-|12| 3.536e-07| 1.957e-06|
-|13| 9.404e-07| 4.114e-06|
-|14| 2.906e-06| 8.765e-06|
-|15| 8.354e-06| 1.681e-05|
-|16| 2.381e-05| 3.662e-05|
-|17| 6.841e-05| 7.173e-05|
-|18| 0.000185| 0.0001506|
-|19| 0.0005032| 0.000318|
-|20| 0.001591| 0.0006849|
-|21| 0.00347| 0.001415|
-|22| 0.007261| 0.003094|
-|23| 0.01587| 0.006454|
-|24| 0.0391| 0.01352|
-|25| 0.08211| 0.02848|
-|26| 0.1951| 0.05957|
-|27| 0.3747| 0.1275|
-|28| 0.9282| 0.3168|
-|29| 2.464| 0.6889|
-|30| 3.672| 1.518|
+|10| 2.046e-08| 3.397e-07|
+|11| 8.967e-08| 7.335e-07|
+|12| 2.663e-07| 1.585e-06|
+|13| 8.018e-07| 3.322e-06|
+|14| 2.447e-06| 7.171e-06|
+|15| 7.89e-06| 1.553e-05|
+|16| 2.296e-05| 3.218e-05|
+|17| 6.528e-05| 6.825e-05|
+|18| 0.0001819| 0.000145|
+|19| 0.0004993| 0.0003072|
+|20| 0.001584| 0.000665|
+|21| 0.003457| 0.001381|
+|22| 0.007146| 0.003006|
+|23| 0.01583| 0.006355|
+|24| 0.03877| 0.01325|
+|25| 0.08161| 0.02786|
+|26| 0.1932| 0.058|
+|27| 0.3703| 0.1239|
+|28| 0.9148| 0.3017|
+|29| 2.449| 0.6817|
+|30| 3.67| 1.484|
 |31| 9.827| 3.221|
 |32| 22.11| 7.256|
 |33| 87.79| 15.9|
@@ -57,43 +57,45 @@ Experiments on a PC with an AMD Ryzen 9 5950X CPU and 64GB of DDR4 RAM @1800MHz 
 
 ### Fused variant
 
-The plain product above (`libfft/mg.cpp`, `include/mg.h`) is a direct implementation of the Mateer-Gao algorithm. A second implementation, `libfft/mg_fused.cpp` (`include/mg_fused.h`, namespace `mg_fused`), has the same interface and gives the same results, but is 1.1 to 1.8 times faster; it is a copy of `mg.cpp` that adds one optimization and leaves the original untouched.
+The plain product above (`libfft/mg.cpp`, `include/mg.h`) is a direct implementation of the Mateer-Gao algorithm. A second implementation, `libfft/mg_fused.cpp` (`include/mg_fused.h`, namespace `mg_fused`), has the same interface and gives the same results, but is 1.1 to 10 times faster (the largest gains are at the smallest sizes); it is a copy of `mg.cpp` that adds one optimization and leaves the original untouched.
 
 **Principle.** The DFT is computed recursively on a square array: the Taylor decomposition and DFTs on columns first, then DFTs on rows. In the product, the forward DFTs of both operands, the pointwise product and the first stages of the inverse DFT are chained, so at the end of the forward DFTs the rows are polynomials of degree < R (R = 4, 16 or 256 words) evaluated on a coset a + GF(R) of the subfield GF(R) of GF(2<sup>64</sup>), which is possible because the beta basis is a Cantor basis. For a row, "DFT of both operands, pointwise product, inverse DFT" is therefore just a product of two polynomials of degree < R modulo the polynomial vanishing on the coset, x<sup>R</sup> + x + c, with c = a<sup>R</sup> + a (c is already known to the DFT code: it is the offset of the next recursion level). The fused variant does not perform these DFT stages on rows of 16 words (4 words for the smallest sizes): it computes the product of the rows directly.
 
 **Implementation.** A row product is computed with Karatsuba on carry-less 64x64-bit products that are left unreduced (the reduction is linear over F2 and done once at the end), then reduced modulo x<sup>R</sup> + x + c, which costs one multiplication by c per coefficient since x<sup>R</sup> = x + c. When the CPU supports it (see above), two rows are processed at once with 256-bit `vpclmulqdq`; otherwise a 128-bit version is used. The direct product beats the chain of DFTs for R = 4 and 16 (by a factor of 2 to 3 on a row) but not for R = 256, hence the choice of these row sizes. See `CODE_GUIDE.md` for more details.
 
+**Base case.** For small products (operands of at most 2<sup>13</sup> bits, i.e. 128 64-bit words, so results of up to 2<sup>14</sup> bits), the DFT is not used at all: the product is computed directly by Karatsuba on carry-less 64x64-bit products (one `pclmulqdq` for operands of at most 64 bits, three for 128 bits, and so on; schoolbook multiplication below 4 words). This is faster than the DFT-based product up to 2<sup>14</sup> bits (1.3 to 10 times faster, versus the fused DFT-based product); at 2<sup>15</sup> bits both are equal, and above the DFT wins (1.4 times faster at 2<sup>16</sup>). This crossover and the other parameters were set by experiment (macros `MG_FUSED_BASE_LOGN`, `MG_FUSED_BASE_KT` in `mg_fused.cpp`; `MG_FUSED_BASE_LOGN=-1` disables the base case). This base case is not as fast as the one in gf2x, which is 1.3 times faster for products of 2<sup>10</sup> to 2<sup>14</sup> bits.
+
 **Use.** The functions of `mg_fused.h` are drop-in replacements for those of `mg.h`. `product_test` uses them if the constant `use_fused_variant` at the top of `product_test.cpp` is set to `true`. Both variants are tested by `degree_test` in `product_test`.
 
-**Results.** Same machine as above (AMD 5950X, in-place product, same measurement method). The three columns were measured in the same run, and the results of both variants are checked against gf2x at each size:
+**Results.** Same machine as above (AMD 5950X, in-place product, same measurement method; these are the same figures as the first two columns of the table above for the sizes in common). Plain and fused variants were measured in separate runs of `product_test` (for sizes up to 2<sup>20</sup>, the fused column was measured again after the base case was added), and the results of both variants are checked against gf2x at each size. For gf2x, the smallest of the measured times is given:
 
 |Output log2 size|gf2x (sec.)|Mateer-Gao (sec.)|fused Mateer-Gao (sec.)|speedup of fused over plain|speed ratio fused / gf2x|
 |:----:|:----:|:----:|:----:|:----:|:----:|
-|8| 3.69e-08| 2.527e-07| 1.877e-07| 1.35| 0.20|
-|9| 3.56e-08| 2.257e-07| 1.824e-07| 1.24| 0.20|
-|10| 5.18e-08| 4.085e-07| 3.294e-07| 1.24| 0.16|
-|11| 1.503e-07| 9.755e-07| 5.738e-07| 1.70| 0.26|
-|12| 3.282e-07| 1.854e-06| 1.115e-06| 1.66| 0.29|
-|13| 9.234e-07| 4.023e-06| 2.552e-06| 1.58| 0.36|
-|14| 2.867e-06| 9.547e-06| 5.327e-06| 1.79| 0.54|
-|15| 8.707e-06| 1.737e-05| 1.176e-05| 1.48| 0.74|
-|16| 2.322e-05| 3.238e-05| 2.29e-05| 1.41| 1.01|
-|17| 6.372e-05| 6.96e-05| 4.978e-05| 1.40| 1.28|
-|18| 0.000179| 0.000158| 0.0001179| 1.34| 1.52|
-|19| 0.000492| 0.0003158| 0.0002381| 1.33| 2.07|
-|20| 0.001586| 0.0006484| 0.0004985| 1.30| 3.18|
-|21| 0.003469| 0.001448| 0.001125| 1.29| 3.09|
-|22| 0.007067| 0.00288| 0.00228| 1.26| 3.10|
-|23| 0.01587| 0.006657| 0.005317| 1.25| 2.99|
-|24| 0.03832| 0.01306| 0.01045| 1.25| 3.67|
-|25| 0.08007| 0.02724| 0.02215| 1.23| 3.62|
-|26| 0.1889| 0.05712| 0.04662| 1.23| 4.05|
-|27| 0.3643| 0.1213| 0.1003| 1.21| 3.63|
-|28| 0.894| 0.304| 0.2593| 1.17| 3.45|
-|29| 2.378| 0.6827| 0.5928| 1.15| 4.01|
-|30| 3.541| 1.478| 1.298| 1.14| 2.73|
+|8| 6.535e-09| 9.498e-08| 1.173e-08| 8.10| 0.56|
+|9| 9.667e-09| 1.742e-07| 1.63e-08| 10.68| 0.59|
+|10| 2.046e-08| 3.397e-07| 3.718e-08| 9.14| 0.55|
+|11| 8.967e-08| 7.335e-07| 1.133e-07| 6.47| 0.79|
+|12| 2.663e-07| 1.585e-06| 3.534e-07| 4.49| 0.75|
+|13| 8.018e-07| 3.322e-06| 1.071e-06| 3.10| 0.75|
+|14| 2.414e-06| 7.171e-06| 3.318e-06| 2.16| 0.73|
+|15| 7.832e-06| 1.553e-05| 1.056e-05| 1.47| 0.74|
+|16| 2.296e-05| 3.218e-05| 2.257e-05| 1.43| 1.02|
+|17| 6.528e-05| 6.825e-05| 4.891e-05| 1.40| 1.33|
+|18| 0.0001819| 0.000145| 0.0001085| 1.34| 1.68|
+|19| 0.0004993| 0.0003072| 0.0002339| 1.31| 2.13|
+|20| 0.001584| 0.000665| 0.0005043| 1.32| 3.14|
+|21| 0.003457| 0.001381| 0.001066| 1.29| 3.24|
+|22| 0.007146| 0.003006| 0.002372| 1.27| 3.01|
+|23| 0.01583| 0.006355| 0.005072| 1.25| 3.12|
+|24| 0.03877| 0.01325| 0.01074| 1.23| 3.61|
+|25| 0.08161| 0.02786| 0.02264| 1.23| 3.60|
+|26| 0.1932| 0.058| 0.04771| 1.22| 4.05|
+|27| 0.3703| 0.1239| 0.1026| 1.21| 3.61|
+|28| 0.9148| 0.3017| 0.2563| 1.18| 3.57|
+|29| 2.449| 0.6817| 0.5878| 1.16| 4.17|
+|30| 3.67| 1.484| 1.297| 1.14| 2.83|
 
-The advantage of the fused variant is largest for sizes of 2<sup>11</sup> to 2<sup>15</sup> (1.5 to 1.8x) and decreases to 1.1 - 1.2x at 2<sup>28</sup> to 2<sup>30</sup>, where the last DFT stages weigh less. The fused variant overtakes gf2x at output size 2<sup>16</sup>, the plain variant at 2<sup>18</sup> in this run (2<sup>17</sup> in others). Below this size, gf2x is faster (up to about 6x at 2<sup>10</sup>).
+The fused variant is 8 to 11 times faster than the plain one up to 2<sup>10</sup> bits, thanks to the base case, 2 to 6 times faster from 2<sup>11</sup> to 2<sup>14</sup>, 1.4 times faster at 2<sup>15</sup> to 2<sup>16</sup>, and the advantage then decreases from 1.3x at 2<sup>20</sup> to 1.1 - 1.2x at 2<sup>28</sup> to 2<sup>30</sup>, where the last DFT stages weigh less. The fused variant overtakes gf2x at output size 2<sup>16</sup> (2<sup>18</sup> for the plain variant). Below this size gf2x is faster, by a factor of 1.3 to 1.8 for 2<sup>8</sup> to 2<sup>15</sup>.
 
 ### Product memory requirements
 

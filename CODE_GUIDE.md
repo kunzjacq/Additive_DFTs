@@ -147,8 +147,8 @@ a 'pure' implementation).
 
 - `product_test.cpp` multiplies random polynomials of degree 2^(lsz-1) - 1. The default list is
   `{8..19, 25, 30, 34}`. gf2x comparison is limited to lsz <= 25 (`gf2x_max_logsize`). Settings:
-  `test_in_place_variant`, `test_naive_product`, `benchmark`, `min_time` (2 s) and `max_runs`
-  (100). Exit code 0 means all comparisons passed. It requires the CPU flags AVX2, PCLMULQDQ,
+  `test_in_place_variant`, `test_naive_product`, `benchmark`, `min_time` (2 s, runs are timed
+  by batches of at least `batch_min_time` = 1 ms) and `max_runs`. Exit code 0 means all comparisons passed. It requires the CPU flags AVX2, PCLMULQDQ,
   POPCNT and BMI1, and exits with code 2 otherwise.
   - `degree_test` first compares the in-place and out-of-place products of both variants with a naive product for all degrees d1 >= d2 up to 300, with minimal buffers and checking that the bits above the degree of the result are zero. It covers the operands of at most 64 bits and the degrees that are not of the form 2**k - 1.
 - `fft_test.cpp` runs six tests, switchable through `run_tests[]`: VzGG DFT against direct

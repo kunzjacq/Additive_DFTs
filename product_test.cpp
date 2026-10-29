@@ -42,13 +42,48 @@ constexpr bool benchmark = true;
 // maximum execution time for each test (except if 1 run exceeds this time)
 constexpr double min_time = 2.;
 // maximum number of runs for each test
-constexpr uint64_t max_runs = 100;
+constexpr uint64_t max_runs = 1000000000;
 //constexpr uint64_t max_runs = 1;
+// minimum duration of a batch of runs (see time_calls)
+constexpr double batch_min_time = 1e-3;
 
 // compile-time test that platform is little endian
 // (required by the implementation of 'contract' and 'expand' in mg.cpp)
 // gcc only
 // static_assert( __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__);
+
+// Calls f repeatedly and returns the average duration of a call in seconds.
+// The first call is made alone; once it is done, after_first is called (to extract its result) and,
+// if 'benchmark' is set and the first call lasted less than min_time, more calls are made in batches,
+// until min_time seconds have elapsed or max_runs calls have been made. Calls are timed by batch
+// of at least batch_min_time seconds (batches get larger as long as they are shorter), because the
+// cost of reading the clock is not negligible with respect to the duration of a small product
+// (about 25 ns). The first call, which is slower than the others (cold caches), is only used if
+// there are no other calls.
+// run_count is set to the number of calls.
+template<class F, class G> static double time_calls(F f, G after_first, uint64_t& run_count)
+{
+  timer tm;
+  tm.set_start();
+  f();
+  const double t_first = tm.measure();
+  after_first();
+  run_count = 1;
+  if(!benchmark || t_first > min_time) return t_first;
+  double total = 0;
+  uint64_t batch = 1, calls = 0;
+  while(total <= min_time && run_count < max_runs)
+  {
+    tm.set_start();
+    for(uint64_t i = 0; i < batch; i++) f();
+    const double t_batch = tm.measure();
+    total += t_batch;
+    calls += batch;
+    run_count += batch;
+    if(t_batch < batch_min_time) batch *= 2;
+  }
+  return calls == 0 ? t_first : total / (double) calls;
+}
 
 // naive product of binary polynomials, for the degree tests below
 static void naive_bit_product(const uint64_t* a, uint64_t d1, const uint64_t* b, uint64_t d2, uint64_t* r)
@@ -122,12 +157,10 @@ static bool degree_test(uint64_t max_degree)
 
 static bool mateer_gao_product_test(
     unsigned int* log_sz,
-    unsigned int num_sz,
-    bool benchmark)
+    unsigned int num_sz)
 {
   uint64_t run_count;
   double t1 = 0, t2 = 0;
-  timer tm;
   bool local_error, error = false;
   cout << "Testing F2 polynomial product through Mateer-Gao DFT in GF(2**64)" << endl;
   cout << "Minimum execution time per test: " << min_time << " sec." << endl;
@@ -180,7 +213,6 @@ static bool mateer_gao_product_test(
       p1[i] = draw();
       p2[i] = draw();
     }
-    tm.set_start();
     uint32_t e_sz = 0;
     if constexpr(do_gf2x)
     {
@@ -188,16 +220,11 @@ static bool mateer_gao_product_test(
       if(do_gf2x_local)
       {
         cout << " Performing product with gf2x" << endl;
-        do
-        {
-          unsigned long ulsz = (unsigned long) (sz / (16*sizeof(unsigned long)));
-          gf2x_mul((unsigned long *) p3,(unsigned long *) p1, ulsz, (unsigned long *) p2, ulsz);
-          if(run_count == 0) e_sz =  extract<uint64_t>(p3, sz/64, e1, extract_size);
-          run_count++;
-          t1 = tm.measure();
-        }
-        while(benchmark && (t1 <= min_time) && (run_count < max_runs));
-        t1 /= (double) run_count;
+        const unsigned long ulsz = (unsigned long) (sz / (16*sizeof(unsigned long)));
+        t1 = time_calls(
+            [&]{gf2x_mul((unsigned long *) p3,(unsigned long *) p1, ulsz, (unsigned long *) p2, ulsz);},
+            [&]{e_sz =  extract<uint64_t>(p3, sz/64, e1, extract_size);},
+            run_count);
         cout << " gf2x runs: " << run_count << endl;
         cout << " gf2x time per run: " << t1 << " sec." << endl;
         // reset result
@@ -225,10 +252,7 @@ static bool mateer_gao_product_test(
     }
 
     cout << " Performing product with MG DFT" << endl;
-    tm.set_start();
-    run_count = 0;
-
-    do
+    auto mg_product = [&]
     {
       if constexpr(compute_in_place)
       {
@@ -247,14 +271,15 @@ static bool mateer_gao_product_test(
           else mg_binary_polynomial_multiply(p1, p2, p3, sz/2 - 1, sz/2 - 1);
         }
       }
-      uint64_t* result = compute_in_place ? p1 : p3;
-      if(compare && (run_count == 0)) extract<uint64_t>(result, sz/64, e2, extract_size);
-      run_count++;
-      t2 = tm.measure();
-
-    }
-    while(benchmark && (t2 <= min_time) && (run_count < max_runs));
-    t2 /= (double) run_count;
+    };
+    t2 = time_calls(
+        mg_product,
+        [&]
+        {
+          uint64_t* result = compute_in_place ? p1 : p3;
+          if(compare) extract<uint64_t>(result, sz/64, e2, extract_size);
+        },
+        run_count);
     cout << " Mateer-Gao runs: " << run_count << endl;
     cout << " Mateer-Gao product time per run: " << t2 << " sec." << endl;
     if(compare)
@@ -298,7 +323,7 @@ int main(int UNUSED(argc), char** UNUSED(argv))
   }
   unsigned int num_sz = sizeof(log_sz) / sizeof(unsigned int);
   bool mateer_gao_error = degree_test(300);
-  mateer_gao_error |= mateer_gao_product_test(log_sz, num_sz, benchmark);
+  mateer_gao_error |= mateer_gao_product_test(log_sz, num_sz);
   if(mateer_gao_error) cout << "Mateer-Gao product test failed" << endl;
   return mateer_gao_error? EXIT_FAILURE : EXIT_SUCCESS;
 }
