@@ -1,4 +1,5 @@
 #include <cstdint>
+#include <immintrin.h>
 #include <iostream>
 #include <random> // for mt19937_64, uniform_int_distribution<>
 #include <memory> // for unique_ptr
@@ -101,6 +102,20 @@ static void naive_bit_product(const uint64_t* a, uint64_t d1, const uint64_t* b,
   }
 }
 
+// same, 64 times faster for large degrees (schoolbook product on words, with carry-less multiplications)
+static void naive_word_product(const uint64_t* a, uint64_t d1, const uint64_t* b, uint64_t d2, uint64_t* r)
+{
+  for(uint64_t i = 0; i <= d1 / 64; i++)
+  {
+    for(uint64_t j = 0; j <= d2 / 64; j++)
+    {
+      const __m128i x = _mm_clmulepi64_si128(_mm_cvtsi64_si128((long long) a[i]), _mm_cvtsi64_si128((long long) b[j]), 0);
+      r[i + j] ^= (uint64_t) _mm_cvtsi128_si64(x);
+      r[i + j + 1] ^= (uint64_t) _mm_extract_epi64(x, 1);
+    }
+  }
+}
+
 // tests the in-place and out-of-place products of both variants against a naive product,
 // for all pairs d1 >= d2 of degrees up to max_degree (small degrees only, in particular
 // operands of at most 64 bits, and degrees that are not of the form 2**k - 1), with
@@ -114,7 +129,7 @@ static bool degree_test(uint64_t max_degree)
   for(uint64_t d1 = 0; d1 <= max_degree; d1++)
     for(uint64_t d2 = 0; d2 <= d1; d2 += (d1 < 140) ? 1 : 7) pairs.push_back({d1, d2});
   // larger degrees, around the sizes at which the base case (small products) stops being used
-  for(uint64_t d1: {511, 512, 1023, 1024, 2047, 2048, 4095, 4096, 8191, 8192, 9000})
+  for(uint64_t d1: {511, 512, 1023, 1024, 2047, 2048, 4095, 4096, 8191, 8192, 9000, 16383, 32767, 32768, 33000})
     for(uint64_t d2: {uint64_t(0), uint64_t(1), uint64_t(63), uint64_t(64), uint64_t(255), d1 / 3, d1}) pairs.push_back({d1, d2});
   for(const auto& dd: pairs)
   {
@@ -125,10 +140,12 @@ static bool degree_test(uint64_t max_degree)
       while((1uLL << lg) * 32 < (d1 + d2 + 1)) lg++;
       while((1uLL << l2) * 32 < (d2 + 1)) l2++;
       const uint64_t nw = (d1 + d2) / 64 + 1;
-      vector<uint64_t> a(d1 / 64 + 1, 0), b(d2 / 64 + 1, 0), expected(nw, 0);
+      vector<uint64_t> a(d1 / 64 + 1, 0), b(d2 / 64 + 1, 0), expected(nw + 1, 0);
       for(uint64_t k = 0; k <= d1; k++) if(engine() & 1) a[k / 64] |= 1uLL << (k % 64);
       for(uint64_t k = 0; k <= d2; k++) if(engine() & 1) b[k / 64] |= 1uLL << (k % 64);
-      naive_bit_product(a.data(), d1, b.data(), d2, expected.data());
+      if(d1 * d2 < 20000000) naive_bit_product(a.data(), d1, b.data(), d2, expected.data());
+      else naive_word_product(a.data(), d1, b.data(), d2, expected.data());
+      expected.resize(nw);
       for(int variant = 0; variant < 2; variant++)
       {
         // out of place: result buffer filled with garbage

@@ -582,79 +582,118 @@ static int mg_cut_level(unsigned int logsize_1, unsigned int logsize_2, unsigned
 // MG_FUSED_BASE_LOGN = -1 disables this base case.
 // ---------------------------------------------------------------------------------------------
 #ifndef MG_FUSED_BASE_LOGN
-#define MG_FUSED_BASE_LOGN 7
-#endif
-#ifndef MG_FUSED_BASE_KT
-#define MG_FUSED_BASE_KT 4
+#define MG_FUSED_BASE_LOGN 9
 #endif
 static constexpr int base_max_logn = MG_FUSED_BASE_LOGN;
 
-// out[0..2N-2] <- unreduced a * b, as kmul, for any power of two N: Karatsuba, with kmul (unrolled)
-// for N <= 16.
-static void kmul_big(const uint64_t* a, const uint64_t* b, unsigned int n, __m128i* out)
+// Products on "digits" of 128 bits (2 words): the operands of the base case are processed as arrays of
+// 128-bit vectors, which avoids moves between general purpose and vector registers.
+
+// (a0 + a1 X) (b0 + b1 X) with 64-bit coefficients (a0, b0 in the low halves of a and b):
+// lo and hi are the low and high 128 bits of the 256-bit product. 3 carry-less products.
+static inline void mul_digit(__m128i a, __m128i b, __m128i& lo, __m128i& hi)
 {
-  switch(n)
+  const __m128i t00 = _mm_clmulepi64_si128(a, b, 0x00);
+  const __m128i t11 = _mm_clmulepi64_si128(a, b, 0x11);
+  // a0 + a1 and b0 + b1, in both halves
+  const __m128i sa = _mm_xor_si128(a, _mm_shuffle_epi32(a, 0x4e));
+  const __m128i sb = _mm_xor_si128(b, _mm_shuffle_epi32(b, 0x4e));
+  const __m128i tk = _mm_xor_si128(_mm_clmulepi64_si128(sa, sb, 0x00), _mm_xor_si128(t00, t11)); // a0 b1 + a1 b0
+  lo = _mm_xor_si128(t00, _mm_slli_si128(tk, 8));
+  hi = _mm_xor_si128(t11, _mm_srli_si128(tk, 8));
+}
+
+// out[0..2M-1] <- a[0..M-1] * b[0..M-1], polynomials of M digits (2M words), M a power of 2.
+// Karatsuba on digits: all additions and shifts are by whole digits.
+template<int M> static inline void mul_digits(const __m128i* a, const __m128i* b, __m128i* out)
+{
+  if constexpr(M == 1) mul_digit(a[0], b[0], out[0], out[1]);
+  else
   {
-  case 1:  kmul<1,  MG_FUSED_BASE_KT>(a, b, out); return;
-  case 2:  kmul<2,  MG_FUSED_BASE_KT>(a, b, out); return;
-  case 4:  kmul<4,  MG_FUSED_BASE_KT>(a, b, out); return;
-  case 8:  kmul<8,  MG_FUSED_BASE_KT>(a, b, out); return;
-  case 16: kmul<16, MG_FUSED_BASE_KT>(a, b, out); return;
+    constexpr int h = M / 2;
+    __m128i sa[h], sb[h], mid[2 * h];
+    mul_digits<h>(a, b, out);
+    mul_digits<h>(a + h, b + h, out + 2 * h);
+    for(int i = 0; i < h; i++) {sa[i] = _mm_xor_si128(a[i], a[i + h]); sb[i] = _mm_xor_si128(b[i], b[i + h]);}
+    mul_digits<h>(sa, sb, mid);
+    // out[h..3h-1] ^= mid ^ lo ^ hi, where lo = out[0..2h-1], hi = out[2h..4h-1] (with x = lo[h + i] ^ hi[i] used twice)
+    for(int i = 0; i < h; i++)
+    {
+      const __m128i x = _mm_xor_si128(out[h + i], out[2 * h + i]);
+      out[h + i]     = _mm_xor_si128(x, _mm_xor_si128(out[i], mid[i]));
+      out[2 * h + i] = _mm_xor_si128(x, _mm_xor_si128(out[3 * h + i], mid[h + i]));
+    }
+  }
+}
+
+// same for any M (a power of 2): recursion, with the arrays on the stack, down to M <= 8.
+static void mul_digits_big(const __m128i* a, const __m128i* b, unsigned int m, __m128i* out)
+{
+  switch(m)
+  {
+  case 1: mul_digits<1>(a, b, out); return;
+  case 2: mul_digits<2>(a, b, out); return;
+  case 4: mul_digits<4>(a, b, out); return;
+  case 8: mul_digits<8>(a, b, out); return;
   default: break;
   }
-  const unsigned int h = n / 2;
-  uint64_t* as = (uint64_t*) alloca(2 * h * sizeof(uint64_t));
-  uint64_t* bs = as + h;
-  __m128i* p0 = (__m128i*) alloca(3 * (2 * h - 1) * sizeof(__m128i));
-  __m128i* p2 = p0 + (2 * h - 1);
-  __m128i* pm = p2 + (2 * h - 1);
-  kmul_big(a, b, h, p0);
-  kmul_big(a + h, b + h, h, p2);
-  for(unsigned int i = 0; i < h; i++) {as[i] = a[i] ^ a[i + h]; bs[i] = b[i] ^ b[i + h];}
-  kmul_big(as, bs, h, pm);
-  for(unsigned int i = 0; i < 2 * n - 1; i++) out[i] = _mm_setzero_si128();
-  for(unsigned int i = 0; i < 2 * h - 1; i++)
+  const unsigned int h = m / 2;
+  __m128i* sa = (__m128i*) alloca(4 * h * sizeof(__m128i));
+  __m128i* sb = sa + h;
+  __m128i* mid = sb + h;
+  mul_digits_big(a, b, h, out);
+  mul_digits_big(a + h, b + h, h, out + 2 * h);
+  for(unsigned int i = 0; i < h; i++) {sa[i] = _mm_xor_si128(a[i], a[i + h]); sb[i] = _mm_xor_si128(b[i], b[i + h]);}
+  mul_digits_big(sa, sb, h, mid);
+  for(unsigned int i = 0; i < h; i++)
   {
-    out[i]         = _mm_xor_si128(out[i], p0[i]);
-    out[i + 2 * h] = _mm_xor_si128(out[i + 2 * h], p2[i]);
-    out[i + h]     = _mm_xor_si128(out[i + h], _mm_xor_si128(pm[i], _mm_xor_si128(p0[i], p2[i])));
+    const __m128i x = _mm_xor_si128(out[h + i], out[2 * h + i]);
+    out[h + i]     = _mm_xor_si128(x, _mm_xor_si128(out[i], mid[i]));
+    out[2 * h + i] = _mm_xor_si128(x, _mm_xor_si128(out[3 * h + i], mid[h + i]));
   }
 }
 
-// r[0..nr-1] <- low nr words of a * b, where a and b have na and nb <= N words.
-// Version for N <= 16, with everything on the stack and unrolled.
-template<int N> static void base_product_small(const uint64_t* a, uint64_t na, const uint64_t* b, uint64_t nb, uint64_t* r, uint64_t nr)
+// r[0..nr-1] <- low nr words of a * b, where a and b have na and nb <= 2*M words. Version for
+// M <= 8 digits, with everything on the stack and unrolled.
+template<int M> static void base_product_small(const uint64_t* a, uint64_t na, const uint64_t* b, uint64_t nb, uint64_t* r, uint64_t nr)
 {
-  uint64_t x[N], y[N];
-  for(uint64_t i = 0; i < N; i++) {x[i] = i < na ? a[i] : 0; y[i] = i < nb ? b[i] : 0;}
-  __m128i p[2 * N - 1];
-  kmul<N, MG_FUSED_BASE_KT>(x, y, p);
-  uint64_t t[2 * N + 1];
-  for(int i = 0; i < 2 * N + 1; i++) t[i] = 0;
-  for(int k = 0; k < 2 * N - 1; k++)
+  // inputs are copied, zero padded (a and b can be shorter, and r can be equal to a)
+  __m128i x[M], y[M], t[2 * M];
+  if(na == 2 * M && nb == 2 * M)
   {
-    t[k]     ^= (uint64_t) _mm_cvtsi128_si64(p[k]);
-    t[k + 1] ^= (uint64_t) _mm_extract_epi64(p[k], 1);
+    // common case: operands of the maximum size
+    for(int i = 0; i < M; i++) {x[i] = _mm_loadu_si128((const __m128i*) a + i); y[i] = _mm_loadu_si128((const __m128i*) b + i);}
   }
-  for(uint64_t i = 0; i < nr; i++) r[i] = t[i];
+  else
+  {
+    uint64_t* xw = (uint64_t*) x;
+    uint64_t* yw = (uint64_t*) y;
+    for(uint64_t i = 0; i < 2 * M; i++) {xw[i] = i < na ? a[i] : 0; yw[i] = i < nb ? b[i] : 0;}
+  }
+  mul_digits<M>(x, y, t);
+  if(nr == 4 * M)
+  {
+    for(int i = 0; i < 2 * M; i++) _mm_storeu_si128((__m128i*) r + i, t[i]);
+  }
+  else
+  {
+    const uint64_t* tw = (const uint64_t*) t;
+    for(uint64_t i = 0; i < nr; i++) r[i] = tw[i];
+  }
 }
 
-// same for any N (a power of two)
-static void base_product_big(const uint64_t* a, uint64_t na, const uint64_t* b, uint64_t nb, uint64_t* r, uint64_t nr, unsigned int n)
+// same for any M (a power of 2), the arrays are allocated on the stack
+static void base_product_big(const uint64_t* a, uint64_t na, const uint64_t* b, uint64_t nb, uint64_t* r, uint64_t nr, unsigned int m)
 {
-  uint64_t* x = (uint64_t*) alloca((2 * n + 2 * n + 1) * sizeof(uint64_t));
-  uint64_t* y = x + n;
-  uint64_t* t = y + n;
-  for(uint64_t i = 0; i < n; i++) {x[i] = i < na ? a[i] : 0; y[i] = i < nb ? b[i] : 0;}
-  __m128i* p = (__m128i*) alloca((2 * n - 1) * sizeof(__m128i));
-  kmul_big(x, y, n, p);
-  for(unsigned int i = 0; i < 2 * n + 1; i++) t[i] = 0;
-  for(unsigned int k = 0; k < 2 * n - 1; k++)
-  {
-    t[k]     ^= (uint64_t) _mm_cvtsi128_si64(p[k]);
-    t[k + 1] ^= (uint64_t) _mm_extract_epi64(p[k], 1);
-  }
-  for(uint64_t i = 0; i < nr; i++) r[i] = t[i];
+  __m128i* x = (__m128i*) alloca(4 * m * sizeof(__m128i));
+  __m128i* y = x + m;
+  __m128i* t = y + m;
+  uint64_t* xw = (uint64_t*) x;
+  uint64_t* yw = (uint64_t*) y;
+  for(uint64_t i = 0; i < 2 * m; i++) {xw[i] = i < na ? a[i] : 0; yw[i] = i < nb ? b[i] : 0;}
+  mul_digits_big(x, y, m, t);
+  const uint64_t* tw = (const uint64_t*) t;
+  for(uint64_t i = 0; i < nr; i++) r[i] = tw[i];
 }
 
 // r[0..nr-1] <- low nr words of a * b, with a and b of na and nb <= 2**logn words
@@ -662,12 +701,19 @@ static void base_product(const uint64_t* a, uint64_t na, const uint64_t* b, uint
 {
   switch(logn)
   {
-  case 0: base_product_small<1>(a, na, b, nb, r, nr); break;
-  case 1: base_product_small<2>(a, na, b, nb, r, nr); break;
-  case 2: base_product_small<4>(a, na, b, nb, r, nr); break;
-  case 3: base_product_small<8>(a, na, b, nb, r, nr); break;
-  case 4: base_product_small<16>(a, na, b, nb, r, nr); break;
-  default: base_product_big(a, na, b, nb, r, nr, 1u << logn); break;
+  case 0:
+    {
+      // 64-bit operands: a single carry-less product
+      const __m128i p = _mm_clmulepi64_si128(_mm_cvtsi64_si128((long long) a[0]), _mm_cvtsi64_si128((long long) b[0]), 0);
+      if(nr >= 2) _mm_storeu_si128((__m128i*) r, p);
+      else r[0] = (uint64_t) _mm_cvtsi128_si64(p);
+    }
+    break;
+  case 1: base_product_small<1>(a, na, b, nb, r, nr); break;
+  case 2: base_product_small<2>(a, na, b, nb, r, nr); break;
+  case 3: base_product_small<4>(a, na, b, nb, r, nr); break;
+  case 4: base_product_small<8>(a, na, b, nb, r, nr); break;
+  default: base_product_big(a, na, b, nb, r, nr, 1u << (logn - 1)); break;
   }
 }
 
