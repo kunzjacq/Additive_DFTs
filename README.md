@@ -122,6 +122,39 @@ It is a direct implementation of the Mateer-Gao DFT, kept as a reference, as it 
 |36| 169.4| 150.7| 1.12|
 |37| 370.8| 329.1| 1.13|
 
+#### Earlier results of the plain variant (AMD 3900X, 2021)
+
+The first version of this benchmark, in 2021, was run on an AMD Ryzen 9 3900X PC with 64GB of RAM, with gf2x 1.3 and the plain variant as it was then (in-place product). The raw numbers, for sizes $2^{10}$ and above, are in `2021-05-results_in_place.csv`; those for sizes $2^{16}$ and above are given below, next to the times of the current code on the 5950X (previous tables). In the 2021 run, the clock was read after each run and the time is the average over the runs; this adds a few tens of nanoseconds to each run, which has no noticeable effect at these sizes.
+
+|Output log2 size|gf2x (sec.)|plain Mateer-Gao (sec.)|plain Mateer-Gao, current code on the 5950X (sec.)|speedup of the plain variant|
+|:----:|:----:|:----:|:----:|:----:|
+|16| 2.809e-05| 7.078e-05| 3.245e-05| 2.18|
+|17| 8.117e-05| 0.0001523| 6.849e-05| 2.22|
+|18| 0.0002241| 0.0003287| 0.0001462| 2.25|
+|19| 0.0006243| 0.0007025| 0.0003095| 2.27|
+|20| 0.001921| 0.001496| 0.000659| 2.27|
+|21| 0.003855| 0.003187| 0.001402| 2.27|
+|22| 0.008008| 0.006811| 0.002979| 2.29|
+|23| 0.01774| 0.01449| 0.006423| 2.26|
+|24| 0.04493| 0.03036| 0.01346| 2.26|
+|25| 0.09081| 0.06374| 0.0281| 2.27|
+|26| 0.2167| 0.1359| 0.059| 2.30|
+|27| 0.4348| 0.2925| 0.1249| 2.34|
+|28| 1.039| 0.6303| 0.2987| 2.11|
+|29| 2.66| 1.346| 0.6726| 2.00|
+|30| 4.489| 2.859| 1.466| 1.95|
+|31| 12.13| 5.99| 3.145| 1.90|
+|32| 27.14| 12.66| 7.037| 1.80|
+|33| 103.7| 26.93| 15.64| 1.72|
+|34| 166.7| 57.22| 34.7| 1.65|
+|35| 682.8| 120.1| 75.71| 1.59|
+|36| not enough memory| 252| 169.4| 1.49|
+|37| not enough memory| 533| 370.8| 1.44|
+
+The times of 2021 are worse than the current ones, for two reasons:
+- **The processor.** The 3900X (Zen 2) is slower than the 5950X (Zen 3). With the same version of gf2x, the 5950X is $1.07$ to $1.5$ times faster than the 3900X for these sizes (about $1.1$ to $1.3$ for most of them). This gives an idea of the effect of the machine alone.
+- **Optimizations of the plain variant since 2021.** The plain Mateer-Gao product is $1.4$ to $2.3$ times faster, so $1.3$ to $2.1$ times faster than the machine alone explains. Three optimizations were made to the plain code: the reduction modulo the minimal polynomial of $\mathbb{F}_{2^{64}}$ uses a 16-entry table (instruction `pshufb`) instead of a third carry-less multiplication (in the field product and in the evaluation of degree 1 polynomials); the evaluation of degree 1 polynomials uses the 256-bit `vpclmulqdq` (two carry-less products per instruction) when the build targets it; and the lowest level of the DFT (rows of 4 words) is computed by kernels that keep the row in registers (`MG_ROW4`). The speedup is about $2.2$ to $2.3$ for sizes $2^{16}$ to $2^{27}$ and decreases for larger sizes (to $1.4$ at $2^{37}$), where the last stages of the DFT weigh less.
+
 ### Memory requirements
 
 The functions of `mg.h` and `mg_fused.h` have the same memory requirements (the base case of the optimized variant, for small products, only uses a few tens of KB of stack).

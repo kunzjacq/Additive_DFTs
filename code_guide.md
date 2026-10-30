@@ -177,8 +177,8 @@ a 'pure' implementation).
 ### Data files
 
 `2026-10-results_in_place.csv` holds the benchmark numbers of the README tables (output of
-`benchmark.sh`: gf2x, plain and optimized times for each size); `2020-10-results_not_in_place.csv`,
-`2021-05-results_in_place.csv` and `runtimes.ods` are older results (3900X; a `0` in the gf2x column
+`benchmark.sh`: gf2x, plain and optimized times for each size); `2020-10-results_not_in_place.csv`
+and `2021-05-results_in_place.csv` are older results (3900X; a `0` in the gf2x column
 means out of memory). `times.png` and `speed_ratio.png` are the plots the README embeds, drawn from
 the 2026-10 CSV (gf2x, plain and optimized curves).
 
