@@ -1,7 +1,7 @@
 # Code guide
 
 A map of the source tree, written from a read-through of the code. For the mathematics, see
-[algo_fft_en.md](algo_fft_en.md). For usage, benchmarks and build instructions, see
+[algorithms_description.md](algorithms_description.md). For usage, benchmarks and build instructions, see
 [README.md](README.md).
 
 ## Build targets

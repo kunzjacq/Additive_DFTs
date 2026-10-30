@@ -2,7 +2,7 @@
 
 Status: **applied to the optimized variant of the product** (`libfft/mg_fused.cpp`), through the functions of
 `include/mg_taylor_opt.h`; the plain variant (`libfft/mg.cpp`) still uses the original functions of
-`include/mg_templates.h`. See [algo_fft_en.md](algo_fft_en.md), section "Taylor decomposition", for the
+`include/mg_templates.h`. See [algorithms_description.md](algorithms_description.md), section "Taylor decomposition", for the
 algorithm itself (notations: $\tau = 2^t$, $n$ the size of the polynomial, $m = n/2$, $\delta = m/\tau$,
 $Y = X^\tau + X$).
 
